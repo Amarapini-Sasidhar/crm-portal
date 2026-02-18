@@ -16,9 +16,15 @@ async function bootstrap() {
 
   // ---- REGISTER FASTIFY PLUGINS BEFORE NEST STARTS ----
   await (adapter as any).register(cors, {
-    origin: 'http://localhost:5173',
+    origin: [
+      'http://localhost:5173',
+      'https://crm-portal-sand.vercel.app'
+    ],
     credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
+
 
   await (adapter as any).register(multipart, {
     limits: {
