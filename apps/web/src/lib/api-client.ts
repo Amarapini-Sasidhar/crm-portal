@@ -1,6 +1,22 @@
 import { getAccessToken } from './auth-storage';
 import type { ApiErrorPayload } from '../types/api';
 
+/*
+  IMPORTANT:
+  Vercel injects environment variables only if they start with VITE_
+  We now force the frontend to ALWAYS talk to the backend.
+*/
+
+const PROD_API = 'https://crm-api-n7c7.onrender.com/api/v1';
+
+// Vercel / Local support
+const baseUrl =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ||
+  (import.meta.env.VITE_API_URL as string | undefined) ||
+  (import.meta.env.MODE === 'development'
+    ? 'http://localhost:4000/api/v1'
+    : PROD_API);
+
 export class ApiError extends Error {
   statusCode: number;
   details: ApiErrorPayload | null;
@@ -21,22 +37,14 @@ type RequestConfig = {
   authToken?: string | null;
 };
 
-const defaultBaseUrl = '/api/v1';
-const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
-const baseUrl = (configuredBaseUrl ?? defaultBaseUrl).replace(/\/+$/, '');
-
 function createUrl(path: string, query?: RequestConfig['query']) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  const url = new URL(`${baseUrl}${normalizedPath}`, window.location.origin);
+  const url = new URL(`${baseUrl}${normalizedPath}`);
 
-  if (!query) {
-    return url.toString();
-  }
+  if (!query) return url.toString();
 
   Object.entries(query).forEach(([key, value]) => {
-    if (value === undefined || value === null || value === '') {
-      return;
-    }
+    if (value === undefined || value === null || value === '') return;
     url.searchParams.set(key, String(value));
   });
 
@@ -46,44 +54,31 @@ function createUrl(path: string, query?: RequestConfig['query']) {
 async function parseResponse(response: Response): Promise<unknown> {
   const contentType = response.headers.get('content-type') ?? '';
 
-  if (contentType.includes('application/json')) {
-    return response.json();
-  }
-
-  if (contentType.includes('application/pdf') || contentType.includes('octet-stream')) {
-    return response.blob();
-  }
+  if (contentType.includes('application/json')) return response.json();
+  if (contentType.includes('application/pdf') || contentType.includes('octet-stream')) return response.blob();
 
   const text = await response.text();
-  if (!text) {
-    return null;
-  }
-  return text;
+  return text || null;
 }
 
 function getErrorMessage(payload: unknown, fallback: string): string {
-  if (!payload || typeof payload !== 'object') {
-    return fallback;
-  }
+  if (!payload || typeof payload !== 'object') return fallback;
 
   const message = (payload as ApiErrorPayload).message;
-  if (Array.isArray(message)) {
-    return message.join(', ');
-  }
-  if (typeof message === 'string') {
-    return message;
-  }
+
+  if (Array.isArray(message)) return message.join(', ');
+  if (typeof message === 'string') return message;
 
   return fallback;
 }
 
 export async function apiRequest<T>(path: string, config: RequestConfig = {}): Promise<T> {
   const token = config.authToken === undefined ? getAccessToken() : config.authToken;
-  const headers: Record<string, string> = {
-    ...config.headers
-  };
+
+  const headers: Record<string, string> = { ...config.headers };
 
   let body: BodyInit | undefined;
+
   if (config.body instanceof FormData || typeof config.body === 'string' || config.body instanceof Blob) {
     body = config.body;
   } else if (config.body !== null && config.body !== undefined) {
@@ -96,6 +91,7 @@ export async function apiRequest<T>(path: string, config: RequestConfig = {}): P
   }
 
   let response: Response;
+
   try {
     response = await fetch(createUrl(path, config.query), {
       method: config.method ?? 'GET',
@@ -103,7 +99,7 @@ export async function apiRequest<T>(path: string, config: RequestConfig = {}): P
       body
     });
   } catch {
-    throw new ApiError('Network error. Please check your connection and try again.', 0, null);
+    throw new ApiError('Network error. Backend server is unreachable.', 0, null);
   }
 
   const payload = await parseResponse(response);
