@@ -28,10 +28,10 @@ import { envValidationSchema } from './config/env.validation';
         database: configService.getOrThrow<string>('DB_NAME'),
         schema: configService.get<string>('DB_SCHEMA', 'crm'),
 
-        ssl:
-          configService.get<string>('DB_SSL') === 'true'
-            ? { rejectUnauthorized: false }
-            : false,
+        ssl: {
+          rejectUnauthorized: false,
+        },
+
 
         autoLoadEntities: true,
         synchronize: false,
