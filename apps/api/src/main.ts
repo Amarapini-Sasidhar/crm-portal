@@ -51,11 +51,10 @@ async function bootstrap() {
 
   // Read PORT from .env
   const configService = app.get(ConfigService);
-  const port = Number(configService.get<number>('PORT', 4000));
+  const port = process.env.PORT ? Number(process.env.PORT) : 4000;
 
   await app.listen(port, '0.0.0.0');
-
-  console.log(`Server running at http://localhost:${port}`);
+  console.log(`Server running on port ${port}`);
 }
 
 bootstrap();
