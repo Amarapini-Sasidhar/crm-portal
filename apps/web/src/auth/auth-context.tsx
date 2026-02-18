@@ -18,10 +18,7 @@ import {
 import { endpoints } from '../lib/endpoints';
 import type { AuthResponse, PublicUser } from '../types/api';
 
-type AuthSelectableRole = 'STUDENT' | 'FACULTY' | 'ADMIN';
-
 type RegisterInput = {
-  role: AuthSelectableRole;
   firstName: string;
   lastName: string;
   email: string;
@@ -30,7 +27,6 @@ type RegisterInput = {
 };
 
 type LoginInput = {
-  role: AuthSelectableRole;
   email: string;
   password: string;
 };
@@ -87,12 +83,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       });
 
-      if (response.user.role !== input.role) {
-        throw new Error(
-          `Selected role does not match this account. This account belongs to ${response.user.role}.`
-        );
-      }
-
       applyAuthResponse(response);
       syncStateFromStorage();
     },
@@ -101,12 +91,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (input: RegisterInput) => {
-      if (input.role !== 'STUDENT') {
-        throw new Error(
-          'Self-registration is available only for STUDENT role. Faculty/Admin accounts are created by authorized users.'
-        );
-      }
-
       const response = await apiRequest<AuthResponse>(endpoints.auth.register, {
         method: 'POST',
         body: {
@@ -117,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           phone: input.phone
         }
       });
+
       applyAuthResponse(response);
       syncStateFromStorage();
     },
@@ -135,9 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async function bootstrap() {
       const existingToken = getAccessToken();
       if (!existingToken) {
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
         return;
       }
 
@@ -150,9 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setToken(null);
         }
       } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       }
     }
 
