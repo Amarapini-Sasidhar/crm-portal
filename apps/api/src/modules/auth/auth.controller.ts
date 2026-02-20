@@ -13,7 +13,7 @@ export class AuthController {
   @Public()
   @Post('register')
   register(@Body() payload: RegisterDto) {
-    return this.authService.registerStudent(payload);
+    return this.authService.register(payload);
   }
 
   @Public()

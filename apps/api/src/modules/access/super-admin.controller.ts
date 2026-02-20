@@ -38,4 +38,16 @@ export class SuperAdminController {
     const updatedAdmin = await this.usersService.updateStatus(userId, payload.status, [Role.ADMIN]);
     return this.usersService.toPublicUser(updatedAdmin);
   }
+
+  @Get('pending-users')
+  async listPendingUsers() {
+    const pendingUsers = await this.usersService.findPendingUsers();
+    return pendingUsers.map((user) => this.usersService.toPublicUser(user));
+  }
+
+  @Patch('approve/:userId')
+  async approveUser(@Param('userId') userId: string) {
+    const approvedUser = await this.usersService.approveUser(userId);
+    return this.usersService.toPublicUser(approvedUser);
+  }
 }

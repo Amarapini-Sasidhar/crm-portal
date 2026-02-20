@@ -137,44 +137,80 @@ export class CertificatesService {
   }
 
   async listStudentCertificates(studentId: string) {
-    const certificates = await this.certificatesRepository
-      .createQueryBuilder('certificate')
-      .leftJoin(Course, 'course', 'course.course_id = certificate.course_id')
-      .select([
-        'certificate.certificate_id AS "certificateId"',
-        'certificate.certificate_no AS "certificateNo"',
-        'certificate.score_percentage AS "scorePercentage"',
-        'certificate.passed_at AS "passedAt"',
-        'certificate.issued_at AS "issuedAt"',
-        'certificate.revoked AS "revoked"',
-        'certificate.verification_token AS "verificationToken"',
-        'course.course_name AS "courseName"'
-      ])
-      .where('certificate.student_id = :studentId', { studentId })
-      .orderBy('certificate.issued_at', 'DESC')
-      .getRawMany<{
-        certificateId: string;
-        certificateNo: string;
-        scorePercentage: string;
-        passedAt: Date;
-        issuedAt: Date;
-        revoked: boolean;
-        verificationToken: string;
-        courseName: string | null;
-      }>();
+    try {
+      const certificates = await this.certificatesRepository
+        .createQueryBuilder('certificate')
+        .leftJoin(Course, 'course', 'course.course_id = certificate.course_id')
+        .select([
+          'certificate.certificate_id AS "certificateId"',
+          'certificate.certificate_no AS "certificateNo"',
+          'certificate.score_percentage AS "scorePercentage"',
+          'certificate.passed_at AS "passedAt"',
+          'certificate.issued_at AS "issuedAt"',
+          'certificate.revoked AS "revoked"',
+          'certificate.verification_token AS "verificationToken"',
+          'course.course_name AS "courseName"'
+        ])
+        .where('certificate.student_id = :studentId', { studentId })
+        .orderBy('certificate.issued_at', 'DESC')
+        .getRawMany<{
+          certificateId: string;
+          certificateNo: string;
+          scorePercentage: string;
+          passedAt: Date;
+          issuedAt: Date;
+          revoked: boolean;
+          verificationToken: string;
+          courseName: string | null;
+        }>();
 
-    return certificates.map((item) => ({
-      certificateId: item.certificateId,
-      certificateNo: item.certificateNo,
-      courseName: item.courseName,
-      scorePercentage: Number(item.scorePercentage),
-      passedAt: item.passedAt,
-      issuedAt: item.issuedAt,
-      revoked: item.revoked,
-      downloadUrl: this.buildDownloadUrl(item.certificateNo),
-      verificationUrl: this.buildVerificationPageUrl(item.certificateNo, item.verificationToken),
-      verificationApiUrl: this.buildVerificationApiUrl(item.certificateNo, item.verificationToken)
-    }));
+      if (certificates.length === 0) {
+        return [];
+      }
+
+      return certificates.map((item) => ({
+        certificateId: item.certificateId,
+        certificateNo: item.certificateNo,
+        courseName: item.courseName,
+        scorePercentage: Number(item.scorePercentage),
+        passedAt: item.passedAt,
+        issuedAt: item.issuedAt,
+        revoked: item.revoked,
+        downloadUrl: this.buildDownloadUrl(item.certificateNo),
+        verificationUrl: this.buildVerificationPageUrl(item.certificateNo, item.verificationToken),
+        verificationApiUrl: this.buildVerificationApiUrl(item.certificateNo, item.verificationToken)
+      }));
+    } catch (error) {
+      if (this.isUndefinedTableError(error)) {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  async getCertificateNumbersByResultIds(resultIds: string[]): Promise<Map<string, string>> {
+    if (resultIds.length === 0) {
+      return new Map<string, string>();
+    }
+
+    try {
+      const rows = await this.certificatesRepository
+        .createQueryBuilder('certificate')
+        .select('certificate.result_id', 'resultId')
+        .addSelect('certificate.certificate_no', 'certificateNo')
+        .where('certificate.result_id IN (:...resultIds)', { resultIds })
+        .andWhere('certificate.revoked = false')
+        .getRawMany<{ resultId: string; certificateNo: string }>();
+
+      return new Map<string, string>(
+        rows.map((row) => [String(row.resultId), String(row.certificateNo)])
+      );
+    } catch (error) {
+      if (this.isUndefinedTableError(error)) {
+        return new Map<string, string>();
+      }
+      throw error;
+    }
   }
 
   async getStudentCertificateDownload(studentId: string, certificateNo: string) {
@@ -336,6 +372,15 @@ export class CertificatesService {
       typeof (error as QueryFailedError & { driverError?: { code?: string } }).driverError?.code ===
         'string' &&
       (error as QueryFailedError & { driverError?: { code?: string } }).driverError?.code === '23505'
+    );
+  }
+
+  private isUndefinedTableError(error: unknown): boolean {
+    return (
+      error instanceof QueryFailedError &&
+      typeof (error as QueryFailedError & { driverError?: { code?: string } }).driverError?.code ===
+        'string' &&
+      (error as QueryFailedError & { driverError?: { code?: string } }).driverError?.code === '42P01'
     );
   }
 }

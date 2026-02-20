@@ -31,16 +31,23 @@ export class AuthService {
     this.jwtExpiresIn = this.configService.get<string>('JWT_EXPIRES_IN', '15m');
   }
 
-  async registerStudent(input: RegisterDto): Promise<AuthResponse> {
+  async register(input: RegisterDto): Promise<AuthResponse> {
+    const requestedRole = input.role ?? Role.STUDENT;
+    if (requestedRole === Role.SUPER_ADMIN) {
+      throw new ForbiddenException('Public registration is not allowed for super administrators.');
+    }
+    const registrationStatus =
+      requestedRole === Role.STUDENT ? UserStatus.ACTIVE : UserStatus.PENDING;
     const passwordHash = await bcrypt.hash(input.password, this.bcryptSaltRounds);
 
     const user = await this.usersService.createUser({
-      role: Role.STUDENT,
+      role: requestedRole,
       firstName: input.firstName,
       lastName: input.lastName,
       email: input.email,
       phone: input.phone,
-      passwordHash
+      passwordHash,
+      status: registrationStatus
     });
 
     return this.issueTokenResponse(user);
@@ -74,7 +81,9 @@ export class AuthService {
     }
 
     if (user.status !== UserStatus.ACTIVE) {
-      throw new UnauthorizedException('User account is not active.');
+      throw new UnauthorizedException(
+        'Your account is awaiting approval by the super administrator.'
+      );
     }
 
     const isPasswordValid = await bcrypt.compare(input.password, user.passwordHash);

@@ -1,9 +1,10 @@
 import { Transform } from 'class-transformer';
-import { IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import {
   PASSWORD_POLICY_MESSAGE,
   PASSWORD_POLICY_REGEX
 } from '../../../common/constants/password-policy';
+import { Role } from '../../../common/enums/role.enum';
 
 export class RegisterDto {
   @IsString()
@@ -32,4 +33,11 @@ export class RegisterDto {
   @MaxLength(20)
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   phone?: string;
+
+  @IsOptional()
+  @IsEnum(Role)
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value
+  )
+  role?: Role;
 }

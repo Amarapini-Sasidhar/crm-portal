@@ -460,7 +460,6 @@ export class StudentAttemptsService {
     const results = await this.examResultsRepository
       .createQueryBuilder('result')
       .leftJoin(Exam, 'exam', 'exam.exam_id = result.exam_id')
-      .leftJoin('crm.certificates', 'certificate', 'certificate.result_id = result.result_id')
       .select([
         'result.result_id AS "resultId"',
         'result.attempt_id AS "attemptId"',
@@ -474,8 +473,7 @@ export class StudentAttemptsService {
         'result.score_percentage AS "scorePercentage"',
         'result.passed AS "passed"',
         'result.evaluated_at AS "evaluatedAt"',
-        'exam.title AS "examTitle"',
-        'certificate.certificate_no AS "certificateNo"'
+        'exam.title AS "examTitle"'
       ])
       .where('result.student_id = :studentId', { studentId })
       .orderBy('result.evaluated_at', 'DESC')
@@ -493,28 +491,39 @@ export class StudentAttemptsService {
         passed: boolean | string;
         evaluatedAt: Date;
         examTitle: string;
-        certificateNo: string | null;
       }>();
 
-    return results.map((row) => ({
-      resultId: row.resultId,
-      attemptId: row.attemptId,
-      examId: row.examId,
-      examTitle: row.examTitle,
-      totalQuestions: Number(row.totalQuestions),
-      correctAnswers: Number(row.correctAnswers),
-      wrongAnswers: Number(row.wrongAnswers),
-      unanswered: Number(row.unanswered),
-      maxMarks: Number(row.maxMarks),
-      marksObtained: Number(row.marksObtained),
-      scorePercentage: Number(row.scorePercentage),
-      passed: this.toBoolean(row.passed),
-      evaluatedAt: row.evaluatedAt,
-      certificateNo: row.certificateNo,
-      certificateDownloadUrl: row.certificateNo
-        ? this.certificatesService.buildDownloadUrl(row.certificateNo)
-        : null
-    }));
+    if (results.length === 0) {
+      return [];
+    }
+
+    const certificateNoByResultId = await this.certificatesService.getCertificateNumbersByResultIds(
+      results.map((row) => row.resultId)
+    );
+
+    return results.map((row) => {
+      const certificateNo = certificateNoByResultId.get(row.resultId) ?? null;
+
+      return {
+        resultId: row.resultId,
+        attemptId: row.attemptId,
+        examId: row.examId,
+        examTitle: row.examTitle,
+        totalQuestions: Number(row.totalQuestions),
+        correctAnswers: Number(row.correctAnswers),
+        wrongAnswers: Number(row.wrongAnswers),
+        unanswered: Number(row.unanswered),
+        maxMarks: Number(row.maxMarks),
+        marksObtained: Number(row.marksObtained),
+        scorePercentage: Number(row.scorePercentage),
+        passed: this.toBoolean(row.passed),
+        evaluatedAt: row.evaluatedAt,
+        certificateNo,
+        certificateDownloadUrl: certificateNo
+          ? this.certificatesService.buildDownloadUrl(certificateNo)
+          : null
+      };
+    });
   }
 
   private async getExamOrFail(examId: string): Promise<Exam> {

@@ -18,6 +18,7 @@ type CreateUserInput = {
   email: string;
   phone?: string;
   passwordHash: string;
+  status?: UserStatus;
 };
 
 @Injectable()
@@ -42,7 +43,7 @@ export class UsersService {
       email: normalizedEmail,
       phone: input.phone?.trim() ?? null,
       passwordHash: input.passwordHash,
-      status: UserStatus.ACTIVE
+      status: input.status ?? UserStatus.ACTIVE
     });
 
     return this.usersRepository.save(user);
@@ -71,6 +72,27 @@ export class UsersService {
       where: { role },
       order: { createdAt: 'DESC' }
     });
+  }
+
+  async findPendingUsers(): Promise<User[]> {
+    return this.usersRepository.find({
+      where: { status: UserStatus.PENDING },
+      order: { createdAt: 'DESC' }
+    });
+  }
+
+  async approveUser(userId: string): Promise<User> {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
+
+    if (user.status !== UserStatus.PENDING) {
+      throw new UnprocessableEntityException('User is not pending approval.');
+    }
+
+    user.status = UserStatus.ACTIVE;
+    return this.usersRepository.save(user);
   }
 
   async updateStatus(userId: string, status: UserStatus, allowedRoles?: Role[]): Promise<User> {
