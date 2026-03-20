@@ -49,12 +49,17 @@ export class CourseBatchService {
       throw new UnprocessableEntityException('Only admin and super admin users can create courses.');
     }
 
-    const duplicateName = await this.coursesRepository
-      .createQueryBuilder('course')
-      .where('LOWER(course.course_name) = LOWER(:courseName)', { courseName: normalizedName })
-      .getOne();
+    const duplicateNameRows = await this.dataSource.query(
+      `
+        SELECT course_id
+        FROM crm.courses
+        WHERE LOWER(course_name) = LOWER($1)
+        LIMIT 1
+      `,
+      [normalizedName]
+    );
 
-    if (duplicateName) {
+    if (duplicateNameRows.length > 0) {
       throw new ConflictException('Course with this name already exists.');
     }
 
@@ -65,19 +70,29 @@ export class CourseBatchService {
       appendCourseVideoToDescription(payload.description, normalizedVideoUrl ?? undefined) ?? null;
 
     try {
-      const savedCourse = await this.dataSource.transaction(async (manager) => {
-        const courseRepo = manager.getRepository(Course);
-        const course = courseRepo.create({
-          courseCode,
-          courseName,
-          description,
-          durationDays: payload.duration,
-          status: CourseStatus.ACTIVE,
-          createdBy: adminUserId
-        });
-
-        return courseRepo.save(course);
-      });
+      const savedCourseRows = await this.dataSource.query(
+        `
+          INSERT INTO crm.courses (
+            course_code,
+            course_name,
+            description,
+            duration_days,
+            status,
+            created_by
+          )
+          VALUES ($1, $2, $3, $4, $5, $6)
+          RETURNING
+            course_id AS "courseId",
+            course_code AS "courseCode",
+            course_name AS "courseName",
+            description AS "description",
+            duration_days AS "durationDays",
+            status::text AS "status",
+            created_at AS "createdAt"
+        `,
+        [courseCode, courseName, description, payload.duration, CourseStatus.ACTIVE, adminUserId]
+      );
+      const savedCourse = savedCourseRows[0];
 
       return this.toCourseResponse(savedCourse);
     } catch (error) {
@@ -390,13 +405,17 @@ export class CourseBatchService {
     const alphaOnly = courseName.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8);
     const base = alphaOnly.length >= 3 ? alphaOnly : `CRS${alphaOnly}`;
 
-    const latestCode = await this.coursesRepository
-      .createQueryBuilder('course')
-      .select('course.course_code', 'courseCode')
-      .where('course.course_code LIKE :prefix', { prefix: `${base}%` })
-      .orderBy('course.course_code', 'DESC')
-      .limit(1)
-      .getRawOne<{ courseCode?: string }>();
+    const latestCodeRows = await this.dataSource.query(
+      `
+        SELECT course_code AS "courseCode"
+        FROM crm.courses
+        WHERE course_code LIKE $1
+        ORDER BY course_code DESC
+        LIMIT 1
+      `,
+      [`${base}%`]
+    );
+    const latestCode = latestCodeRows[0] as { courseCode?: string } | undefined;
 
     const nextSequence = latestCode?.courseCode
       ? (Number(latestCode.courseCode.match(/(\d+)$/)?.[1] ?? '0') + 1).toString()
@@ -430,7 +449,15 @@ export class CourseBatchService {
     return `${courseName} - ${startDate}`.slice(0, 150);
   }
 
-  private toCourseResponse(course: Course) {
+  private toCourseResponse(course: Course | {
+    courseId: string;
+    courseName: string;
+    description: string | null;
+    durationDays: number;
+    courseCode: string;
+    status: string;
+    createdAt: Date | string;
+  }) {
     return {
       courseId: course.courseId,
       name: course.courseName,
