@@ -108,7 +108,7 @@ export function ResetPasswordPage() {
             />
           </label>
 
-          <HintMessage message="This reset link can be reused for this account." />
+          <HintMessage message="Choose a strong new password for your account." />
           {error && <ErrorMessage message={error} />}
           {success && <SuccessMessage message={success} />}
 

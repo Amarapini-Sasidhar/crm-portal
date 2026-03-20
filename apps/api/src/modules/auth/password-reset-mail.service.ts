@@ -50,7 +50,6 @@ export class PasswordResetMailService {
             </p>
             <p>If the button does not work, open this link:</p>
             <p><a href="${this.escapeHtml(input.resetUrl)}">${this.escapeHtml(input.resetUrl)}</a></p>
-            <p>This reset link can be reused for your account.</p>
             <p>If you did not request this, you can ignore this email.</p>
           </div>
         `.trim()
