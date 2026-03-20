@@ -1,6 +1,6 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Resend } from 'resend';
+import { google } from 'googleapis';
 
 @Injectable()
 export class PasswordResetMailService {
@@ -8,52 +8,74 @@ export class PasswordResetMailService {
 
   async sendPasswordResetEmail(input: { email: string; firstName: string; resetUrl: string }) {
     const mailFrom = this.configService.get<string>('MAIL_FROM', '').trim();
-    const resendApiKey = this.configService.get<string>('RESEND_API_KEY', '').trim();
+    const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID', '').trim();
+    const clientSecret = this.configService.get<string>('GOOGLE_CLIENT_SECRET', '').trim();
+    const refreshToken = this.configService.get<string>('GOOGLE_REFRESH_TOKEN', '').trim();
 
-    if (!mailFrom || !resendApiKey) {
+    if (!mailFrom || !clientId || !clientSecret || !refreshToken) {
       throw new InternalServerErrorException(
-        'Password reset email is not configured. Set RESEND_API_KEY and MAIL_FROM environment variables.'
+        'Password reset email is not configured. Set Google OAuth mail environment variables and MAIL_FROM.'
       );
     }
 
-    const resend = new Resend(resendApiKey);
-    const { error } = await resend.emails.send({
-      from: mailFrom,
-      to: [input.email],
-      subject: 'Reset your CRM Portal password',
-      text: [
-        `Hello ${input.firstName},`,
-        '',
-        'Use the link below to reset your CRM Portal password:',
-        input.resetUrl,
-        '',
-        'This reset link does not expire and can be reused for your account.',
-        '',
-        'If you did not request this, you can ignore this email.'
-      ].join('\n'),
-      html: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1f2933;">
-          <p>Hello ${this.escapeHtml(input.firstName)},</p>
-          <p>Use the button below to reset your CRM Portal password.</p>
-          <p>
-            <a
-              href="${this.escapeHtml(input.resetUrl)}"
-              style="display:inline-block;padding:12px 18px;background:#0a6c7f;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:700;"
-            >
-              Reset Password
-            </a>
-          </p>
-          <p>If the button does not work, open this link:</p>
-          <p><a href="${this.escapeHtml(input.resetUrl)}">${this.escapeHtml(input.resetUrl)}</a></p>
-          <p>This reset link does not expire and can be reused for your account.</p>
-          <p>If you did not request this, you can ignore this email.</p>
-        </div>
-      `
+    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
+    oauth2Client.setCredentials({
+      refresh_token: refreshToken
     });
 
-    if (error) {
-      throw new InternalServerErrorException(error.message);
+    const gmail = google.gmail({
+      version: 'v1',
+      auth: oauth2Client
+    });
+
+    const rawMessage = this.toBase64Url(
+      [
+        `From: ${mailFrom}`,
+        `To: ${input.email}`,
+        'Subject: Reset your CRM Portal password',
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset="UTF-8"',
+        '',
+        `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1f2933;">
+            <p>Hello ${this.escapeHtml(input.firstName)},</p>
+            <p>Use the button below to reset your CRM Portal password.</p>
+            <p>
+              <a
+                href="${this.escapeHtml(input.resetUrl)}"
+                style="display:inline-block;padding:12px 18px;background:#0a6c7f;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:700;"
+              >
+                Reset Password
+              </a>
+            </p>
+            <p>If the button does not work, open this link:</p>
+            <p><a href="${this.escapeHtml(input.resetUrl)}">${this.escapeHtml(input.resetUrl)}</a></p>
+            <p>This reset link does not expire and can be reused for your account.</p>
+            <p>If you did not request this, you can ignore this email.</p>
+          </div>
+        `.trim()
+      ].join('\n')
+    );
+
+    try {
+      await gmail.users.messages.send({
+        userId: 'me',
+        requestBody: {
+          raw: rawMessage
+        }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to send email via Gmail API.';
+      throw new InternalServerErrorException(message);
     }
+  }
+
+  private toBase64Url(value: string): string {
+    return Buffer.from(value)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '');
   }
 
   private escapeHtml(value: string): string {
