@@ -1,5 +1,4 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { useAuth } from '../../auth/auth-context';
 import { Panel } from '../../components/ui/panel';
 import { ErrorMessage, HintMessage, SuccessMessage } from '../../components/ui/feedback';
 import { useApiTask } from '../../hooks/use-api-task';
@@ -34,7 +33,6 @@ function buildDescription(description: string, videoUrl: string): string | undef
 }
 
 export function CourseManagementPage() {
-  const { user } = useAuth();
   const [course, setCourse] = useState({
     name: '',
     description: '',
@@ -46,9 +44,7 @@ export function CourseManagementPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const courseTask = useApiTask();
   const createTask = useApiTask();
-
-  const courseEndpoint =
-    user?.role === 'SUPER_ADMIN' ? endpoints.superAdmin.courses : endpoints.admin.courses;
+  const courseEndpoint = endpoints.admin.courses;
 
   useEffect(() => {
     void loadCourses();
