@@ -1,9 +1,10 @@
-import { FormEvent, useMemo, useState } from 'react';
-import { apiRequest } from '../../lib/api-client';
-import { endpoints } from '../../lib/endpoints';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../../auth/auth-context';
 import { Panel } from '../../components/ui/panel';
 import { ErrorMessage, HintMessage, SuccessMessage } from '../../components/ui/feedback';
 import { useApiTask } from '../../hooks/use-api-task';
+import { apiRequest } from '../../lib/api-client';
+import { endpoints } from '../../lib/endpoints';
 import { formatDateTime } from '../../lib/format';
 
 type CreatedCourse = {
@@ -33,6 +34,7 @@ function buildDescription(description: string, videoUrl: string): string | undef
 }
 
 export function CourseManagementPage() {
+  const { user } = useAuth();
   const [course, setCourse] = useState({
     name: '',
     description: '',
@@ -41,22 +43,31 @@ export function CourseManagementPage() {
   });
   const [createdCourses, setCreatedCourses] = useState<CreatedCourse[]>([]);
   const [search, setSearch] = useState('');
-  const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({
-    name: '',
-    description: '',
-    duration: '30'
-  });
   const [createError, setCreateError] = useState<string | null>(null);
-  const [tableError, setTableError] = useState<string | null>(null);
-  const [tableSuccess, setTableSuccess] = useState<string | null>(null);
-  const task = useApiTask();
+  const courseTask = useApiTask();
+  const createTask = useApiTask();
+
+  const courseEndpoint =
+    user?.role === 'SUPER_ADMIN' ? endpoints.superAdmin.courses : endpoints.admin.courses;
+
+  useEffect(() => {
+    void loadCourses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseEndpoint]);
+
+  async function loadCourses() {
+    const response = await courseTask.run(() => apiRequest<CreatedCourse[]>(courseEndpoint));
+    if (response) {
+      setCreatedCourses(response);
+    }
+  }
 
   const filteredCourses = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) {
       return createdCourses;
     }
+
     return createdCourses.filter((item) => {
       return (
         item.courseCode.toLowerCase().includes(query) ||
@@ -68,10 +79,8 @@ export function CourseManagementPage() {
 
   async function onCreateCourse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    task.clearMessages();
+    createTask.clearMessages();
     setCreateError(null);
-    setTableError(null);
-    setTableSuccess(null);
 
     const normalizedName = course.name.trim();
     const duration = Number(course.duration);
@@ -79,6 +88,7 @@ export function CourseManagementPage() {
       setCreateError('Course name is required.');
       return;
     }
+
     if (!Number.isFinite(duration) || duration < 1) {
       setCreateError('Duration must be at least 1 day.');
       return;
@@ -90,25 +100,29 @@ export function CourseManagementPage() {
       duration
     };
 
-    const response = await task.run(
+    const response = await createTask.run(
       () =>
-        apiRequest<CreatedCourse>(endpoints.admin.courses, {
+        apiRequest<CreatedCourse>(courseEndpoint, {
           method: 'POST',
           body: payload
         }),
-      'Course created successfully.'
+      'Course created successfully and added to the shared catalog.'
     );
 
     if (!response) {
       return;
     }
 
-    setCreatedCourses((previous) => [response, ...previous]);
     setCourse({
       name: '',
       description: '',
       duration: '30',
       videoUrl: ''
+    });
+
+    setCreatedCourses((previous) => {
+      const next = [response, ...previous.filter((item) => item.courseId !== response.courseId)];
+      return next.sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
     });
   }
 
@@ -122,79 +136,22 @@ export function CourseManagementPage() {
     });
   }
 
-  function startEdit(courseItem: CreatedCourse) {
-    setTableError(null);
-    setTableSuccess(null);
-    setEditingCourseId(courseItem.courseId);
-    setEditForm({
-      name: courseItem.name,
-      description: courseItem.description ?? '',
-      duration: String(courseItem.duration)
-    });
-  }
-
-  function cancelEdit() {
-    setEditingCourseId(null);
-    setEditForm({
-      name: '',
-      description: '',
-      duration: '30'
-    });
-  }
-
-  function saveEdit() {
-    if (!editingCourseId) {
-      return;
-    }
-
-    const normalizedName = editForm.name.trim();
-    const duration = Number(editForm.duration);
-
-    if (!normalizedName) {
-      setTableError('Course name is required.');
-      return;
-    }
-    if (!Number.isFinite(duration) || duration < 1) {
-      setTableError('Duration must be at least 1 day.');
-      return;
-    }
-
-    setCreatedCourses((previous) =>
-      previous.map((item) =>
-        item.courseId === editingCourseId
-          ? {
-              ...item,
-              name: normalizedName,
-              description: editForm.description.trim() || null,
-              duration
-            }
-          : item
-      )
-    );
-    setTableError(null);
-    setTableSuccess(
-      'Course updated in UI session table. Current backend API set has no course update endpoint.'
-    );
-    cancelEdit();
-  }
-
-  function deleteCourse(courseId: string) {
-    setCreatedCourses((previous) => previous.filter((item) => item.courseId !== courseId));
-    setTableError(null);
-    setTableSuccess(
-      'Course removed from UI session table. Current backend API set has no course delete endpoint.'
-    );
-    if (editingCourseId === courseId) {
-      cancelEdit();
-    }
-  }
-
   return (
     <div className="page-grid">
-      <Panel subtitle="Create course catalog entries." title="Create Course">
+      <Panel
+        subtitle="Create shared courses that are immediately visible to admins, super admins, and students."
+        title="Create Course"
+      >
         <div className="inline-actions">
           <button className="btn btn-outline" onClick={applyFeaturedCourseTemplate} type="button">
             Use Featured YouTube Course
+          </button>
+          <button
+            className="btn btn-outline"
+            onClick={() => void loadCourses()}
+            type="button"
+          >
+            Refresh Catalog
           </button>
         </div>
 
@@ -238,20 +195,21 @@ export function CourseManagementPage() {
           </label>
 
           {createError && <ErrorMessage message={createError} />}
-          {task.error && <ErrorMessage message={task.error} />}
-          {task.success && <SuccessMessage message={task.success} />}
+          {createTask.error && <ErrorMessage message={createTask.error} />}
+          {createTask.success && <SuccessMessage message={createTask.success} />}
 
-          <button className="btn" disabled={task.loading} type="submit">
-            {task.loading ? 'Creating...' : 'Create Course'}
+          <button className="btn" disabled={createTask.loading} type="submit">
+            {createTask.loading ? 'Creating...' : 'Create Course'}
           </button>
         </form>
       </Panel>
 
       <Panel
-        subtitle="Search and manage course rows captured by this UI session."
-        title="Course Records"
+        subtitle="This is the real saved course catalog available across admin and super admin."
+        title="Course Catalog"
       >
-        <HintMessage message="Use the featured course button to seed the YouTube-backed course quickly. Current backend API set provides course create only (`POST /admin/courses`)." />
+        <HintMessage message="Any active course listed here is available for students to discover under Available Courses and enroll from there." />
+
         <label className="field">
           <span>Search by code, name, or status</span>
           <input
@@ -260,8 +218,9 @@ export function CourseManagementPage() {
             value={search}
           />
         </label>
-        {tableError && <ErrorMessage message={tableError} />}
-        {tableSuccess && <SuccessMessage message={tableSuccess} />}
+
+        {courseTask.error && <ErrorMessage message={courseTask.error} />}
+
         <div className="table-wrap">
           <table className="data-table">
             <thead>
@@ -272,92 +231,24 @@ export function CourseManagementPage() {
                 <th>Duration</th>
                 <th>Status</th>
                 <th>Created At</th>
-                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredCourses.map((item) => {
-                const isEditing = editingCourseId === item.courseId;
-                return (
-                  <tr key={item.courseId}>
-                    <td>{item.courseCode}</td>
-                    <td>
-                      {isEditing ? (
-                        <input
-                          onChange={(event) => setEditForm({ ...editForm, name: event.target.value })}
-                          value={editForm.name}
-                        />
-                      ) : (
-                        item.name
-                      )}
-                    </td>
-                    <td>
-                      {isEditing ? (
-                        <input
-                          onChange={(event) =>
-                            setEditForm({ ...editForm, description: event.target.value })
-                          }
-                          value={editForm.description}
-                        />
-                      ) : (
-                        item.description ?? '-'
-                      )}
-                    </td>
-                    <td>
-                      {isEditing ? (
-                        <input
-                          min={1}
-                          onChange={(event) =>
-                            setEditForm({ ...editForm, duration: event.target.value })
-                          }
-                          type="number"
-                          value={editForm.duration}
-                        />
-                      ) : (
-                        `${item.duration} days`
-                      )}
-                    </td>
-                    <td>{item.status}</td>
-                    <td>{formatDateTime(item.createdAt)}</td>
-                    <td>
-                      <div className="actions-cell">
-                        {isEditing ? (
-                          <>
-                            <button className="btn" onClick={saveEdit} type="button">
-                              Save
-                            </button>
-                            <button className="btn btn-outline" onClick={cancelEdit} type="button">
-                              Cancel
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              className="btn btn-outline"
-                              onClick={() => startEdit(item)}
-                              type="button"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className="btn btn-outline danger-on-hover"
-                              onClick={() => deleteCourse(item.courseId)}
-                              type="button"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {filteredCourses.map((item) => (
+                <tr key={item.courseId}>
+                  <td>{item.courseCode}</td>
+                  <td>{item.name}</td>
+                  <td>{item.description ?? '-'}</td>
+                  <td>{item.duration} days</td>
+                  <td>{item.status}</td>
+                  <td>{formatDateTime(item.createdAt)}</td>
+                </tr>
+              ))}
               {filteredCourses.length === 0 && (
                 <tr>
-                  <td colSpan={7}>
+                  <td colSpan={6}>
                     {createdCourses.length === 0
-                      ? 'No courses created in this session.'
+                      ? 'No saved courses found yet.'
                       : 'No course matches your search.'}
                   </td>
                 </tr>

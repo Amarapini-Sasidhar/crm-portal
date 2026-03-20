@@ -28,6 +28,11 @@ export class AdminController {
     return this.dashboardsService.getAdminDashboard();
   }
 
+  @Get('courses')
+  listCourses() {
+    return this.courseBatchService.listCourses();
+  }
+
   @Post('courses')
   createCourse(@CurrentUser() currentUser: AuthenticatedUser, @Body() payload: CreateCourseDto) {
     return this.courseBatchService.createCourse(currentUser.userId, payload);

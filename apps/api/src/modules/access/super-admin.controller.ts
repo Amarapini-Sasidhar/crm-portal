@@ -4,6 +4,8 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums/role.enum';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { AuthService } from '../auth/auth.service';
+import { CreateCourseDto } from '../course-batch/dto/create-course.dto';
+import { CourseBatchService } from '../course-batch/course-batch.service';
 import { CreateManagedUserDto } from '../users/dto/create-managed-user.dto';
 import { UpdateUserStatusDto } from '../users/dto/update-user-status.dto';
 import { UsersService } from '../users/users.service';
@@ -13,7 +15,8 @@ import { UsersService } from '../users/users.service';
 export class SuperAdminController {
   constructor(
     private readonly authService: AuthService,
-    private readonly usersService: UsersService
+    private readonly usersService: UsersService,
+    private readonly courseBatchService: CourseBatchService
   ) {}
 
   @Get('admins')
@@ -49,5 +52,18 @@ export class SuperAdminController {
   async approveUser(@Param('userId') userId: string) {
     const approvedUser = await this.usersService.approveUser(userId);
     return this.usersService.toPublicUser(approvedUser);
+  }
+
+  @Get('courses')
+  listCourses() {
+    return this.courseBatchService.listCourses();
+  }
+
+  @Post('courses')
+  createCourse(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Body() payload: CreateCourseDto
+  ) {
+    return this.courseBatchService.createCourse(currentUser.userId, payload);
   }
 }

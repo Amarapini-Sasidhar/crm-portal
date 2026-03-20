@@ -8,7 +8,8 @@ export const endpoints = {
   },
   superAdmin: {
     admins: '/super-admin/admins',
-    adminStatus: (userId: string) => `/super-admin/admins/${userId}/status`
+    adminStatus: (userId: string) => `/super-admin/admins/${userId}/status`,
+    courses: '/super-admin/courses'
   },
   admin: {
     dashboard: '/admin/dashboard',

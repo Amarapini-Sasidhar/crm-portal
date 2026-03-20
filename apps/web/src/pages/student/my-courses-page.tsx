@@ -84,7 +84,7 @@ export function MyCoursesPage() {
   const [batchId, setBatchId] = useState('');
   const [data, setData] = useState<StudentDashboardResponse | null>(null);
   const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string | null>(null);
-  const [selectedAvailableBatchId, setSelectedAvailableBatchId] = useState<string | null>(null);
+  const [selectedAvailableCourseId, setSelectedAvailableCourseId] = useState<string | null>(null);
   const [courseActionMessage, setCourseActionMessage] = useState<string | null>(null);
   const [progressPercent, setProgressPercent] = useState(0);
 
@@ -177,12 +177,14 @@ export function MyCoursesPage() {
       return null;
     }
 
-    if (!selectedAvailableBatchId) {
+    if (!selectedAvailableCourseId) {
       return data.availableCourses[0];
     }
 
-    return data.availableCourses.find((course) => course.batchId === selectedAvailableBatchId) ?? null;
-  }, [data?.availableCourses, selectedAvailableBatchId]);
+    return (
+      data.availableCourses.find((course) => course.courseId === selectedAvailableCourseId) ?? null
+    );
+  }, [data?.availableCourses, selectedAvailableCourseId]);
 
   useEffect(() => {
     if (!selectedCourse?.videoUrl) {
@@ -354,12 +356,12 @@ export function MyCoursesPage() {
             {data.availableCourses.map((course) => {
                 const mediaUrl = course.videoUrl ?? featuredAvailableVideoUrl;
                 const thumbnailUrl = getThumbnailUrl(mediaUrl);
-                const isSelected = selectedAvailableCourse?.batchId === course.batchId;
+                const isSelected = selectedAvailableCourse?.courseId === course.courseId;
 
                 return (
                   <article
                     className={isSelected ? 'course-showcase-card course-showcase-card-active' : 'course-showcase-card'}
-                    key={course.batchId}
+                    key={course.courseId}
                   >
                     <div className="course-banner-wrap">
                       {thumbnailUrl ? (
@@ -391,7 +393,7 @@ export function MyCoursesPage() {
                       <div className="inline-actions">
                         <button
                           className="btn btn-outline"
-                          onClick={() => setSelectedAvailableBatchId(course.batchId)}
+                          onClick={() => setSelectedAvailableCourseId(course.courseId)}
                           type="button"
                         >
                           Preview

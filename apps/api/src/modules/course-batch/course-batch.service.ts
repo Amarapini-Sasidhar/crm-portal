@@ -80,6 +80,16 @@ export class CourseBatchService {
     return this.toCourseResponse(savedCourse);
   }
 
+  async listCourses() {
+    const courses = await this.coursesRepository.find({
+      order: {
+        createdAt: 'DESC'
+      }
+    });
+
+    return courses.map((course) => this.toCourseResponse(course));
+  }
+
   async createBatch(adminUserId: string, payload: CreateBatchDto) {
     const course = await this.coursesRepository.findOne({
       where: { courseId: payload.courseId, status: CourseStatus.ACTIVE }
