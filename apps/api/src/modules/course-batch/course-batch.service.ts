@@ -44,6 +44,11 @@ export class CourseBatchService {
 
   async createCourse(adminUserId: string, payload: CreateCourseDto) {
     const normalizedName = payload.name.trim();
+    const actor = await this.usersService.findById(adminUserId);
+
+    if (!actor || ![Role.ADMIN, Role.SUPER_ADMIN].includes(actor.role)) {
+      throw new UnprocessableEntityException('Only admin and super admin users can create courses.');
+    }
 
     const duplicateName = await this.coursesRepository
       .createQueryBuilder('course')
@@ -54,30 +59,47 @@ export class CourseBatchService {
       throw new ConflictException('Course with this name already exists.');
     }
 
-    const savedCourse = await this.dataSource.transaction(async (manager) => {
-      const courseRepo = manager.getRepository(Course);
-      const courseCode = await this.generateCourseCode(normalizedName);
+    const normalizedVideoUrl = extractCourseVideoUrl(payload.description);
+    const courseCode = await this.generateCourseCode(normalizedName);
+    const courseName = buildImpactCourseTitle(normalizedName, normalizedVideoUrl).slice(0, 200);
+    const description =
+      appendCourseVideoToDescription(payload.description, normalizedVideoUrl ?? undefined) ?? null;
 
-      const course = courseRepo.create({
-        courseCode,
-        courseName: buildImpactCourseTitle(
-          normalizedName,
-          extractCourseVideoUrl(payload.description)
-        ),
-        description:
-          appendCourseVideoToDescription(
-            payload.description,
-            extractCourseVideoUrl(payload.description) ?? undefined
-          ) ?? null,
-        durationDays: payload.duration,
-        status: CourseStatus.ACTIVE,
-        createdBy: adminUserId
+    try {
+      const savedCourse = await this.dataSource.transaction(async (manager) => {
+        const courseRepo = manager.getRepository(Course);
+        const course = courseRepo.create({
+          courseCode,
+          courseName,
+          description,
+          durationDays: payload.duration,
+          status: CourseStatus.ACTIVE,
+          createdBy: actor.userId
+        });
+
+        return courseRepo.save(course);
       });
 
-      return courseRepo.save(course);
-    });
+      return this.toCourseResponse(savedCourse);
+    } catch (error) {
+      const databaseError = error as { code?: string; detail?: string; message?: string };
 
-    return this.toCourseResponse(savedCourse);
+      if (databaseError.code === '23505') {
+        throw new ConflictException('Course with this name or generated code already exists.');
+      }
+
+      if (databaseError.code === '23503') {
+        throw new BadRequestException('Course could not be created for the authenticated user.');
+      }
+
+      if (databaseError.code === '22001') {
+        throw new BadRequestException('Course name or generated content is too long.');
+      }
+
+      throw new BadRequestException(
+        databaseError.detail ?? databaseError.message ?? 'Unable to create course right now.'
+      );
+    }
   }
 
   async listCourses() {
