@@ -44,6 +44,15 @@ function getVideoId(url: string): string | null {
   }
 }
 
+function getThumbnailUrl(url: string | null): string | null {
+  if (!url) {
+    return null;
+  }
+
+  const videoId = getVideoId(url);
+  return videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : null;
+}
+
 function loadYouTubeApi() {
   return new Promise<void>((resolve) => {
     const scopedWindow = window as typeof window & {
@@ -294,6 +303,79 @@ export function MyCoursesPage() {
       </Panel>
 
       <Panel
+        subtitle="A Mind Luster style browsing section for enrolled video-based courses."
+        title="Available Courses"
+      >
+        {data?.enrolledCourses.some((course) => Boolean(course.videoUrl)) ? (
+          <div className="course-catalog-grid">
+            {data.enrolledCourses
+              .filter((course) => Boolean(course.videoUrl))
+              .map((course) => {
+                const isSelected = selectedCourse?.enrollmentId === course.enrollmentId;
+                const thumbnailUrl = getThumbnailUrl(course.videoUrl);
+
+                return (
+                  <article
+                    className={isSelected ? 'course-showcase-card course-showcase-card-active' : 'course-showcase-card'}
+                    key={course.enrollmentId}
+                  >
+                    <div className="course-banner-wrap">
+                      {thumbnailUrl ? (
+                        <img
+                          alt={course.courseShortTitle}
+                          className="course-banner-image"
+                          src={thumbnailUrl}
+                        />
+                      ) : (
+                        <div className="course-banner-fallback">{course.courseShortTitle}</div>
+                      )}
+                      <span className="course-banner-badge">Free Certificate</span>
+                    </div>
+
+                    <div className="course-showcase-body">
+                      <p className="course-showcase-tag">Available Course</p>
+                      <h3>{course.courseShortTitle}</h3>
+                      <p className="muted tiny">{course.courseName}</p>
+
+                      <div className="course-meta-row">
+                        <span>{course.durationDays} day course</span>
+                        <span>1 lesson</span>
+                      </div>
+
+                      <div className="course-progress-row">
+                        <div className="course-progress-track">
+                          <span
+                            className="course-progress-fill"
+                            style={{ width: `${course.completionPercentage}%` }}
+                          />
+                        </div>
+                        <span>{course.completionPercentage}%</span>
+                      </div>
+
+                      <div className="inline-actions">
+                        <button
+                          className="btn"
+                          onClick={() => {
+                            setSelectedEnrollmentId(course.enrollmentId);
+                            setCourseActionMessage(null);
+                            setProgressPercent(course.completionPercentage);
+                          }}
+                          type="button"
+                        >
+                          {isSelected ? 'Watching Now' : 'Open Course'}
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+          </div>
+        ) : (
+          <HintMessage message="No video-backed courses are available in your enrollments yet." />
+        )}
+      </Panel>
+
+      <Panel
         subtitle="Watch the linked course video and earn your certificate after full completion."
         title="Course Player"
       >
@@ -307,6 +389,7 @@ export function MyCoursesPage() {
               <p className="tiny muted">
                 Progress: {Math.max(progressPercent, selectedCourse.completionPercentage)}%
               </p>
+              <p className="tiny muted">Batch: {selectedCourse.batchName}</p>
               {selectedCourse.certificateNo && (
                 <p className="tiny muted">Certificate: {selectedCourse.certificateNo}</p>
               )}
@@ -326,7 +409,7 @@ export function MyCoursesPage() {
         )}
       </Panel>
 
-      <Panel subtitle="Current enrolled courses from dashboard API." title="Course Enrollments">
+      <Panel subtitle="Detailed enrollment records from the dashboard API." title="Course Enrollments">
         <div className="table-wrap">
           <table className="data-table">
             <thead>

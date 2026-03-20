@@ -641,6 +641,112 @@ select:focus {
   border-radius: 10px;
 }
 
+.course-catalog-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.course-showcase-card {
+  overflow: hidden;
+  border: 1px solid #d3e2e9;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff, #f7fbfd);
+  box-shadow: var(--shadow);
+}
+
+.course-showcase-card-active {
+  border-color: #92bfce;
+  box-shadow: 0 16px 40px rgba(7, 35, 55, 0.16);
+}
+
+.course-banner-wrap {
+  position: relative;
+  background: linear-gradient(135deg, #0b6f82, #0d4857);
+}
+
+.course-banner-image,
+.course-banner-fallback {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  display: block;
+}
+
+.course-banner-fallback {
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 1rem;
+  text-align: center;
+}
+
+.course-banner-badge {
+  position: absolute;
+  left: 0.8rem;
+  bottom: 0.8rem;
+  padding: 0.34rem 0.58rem;
+  border-radius: 999px;
+  background: rgba(16, 28, 36, 0.82);
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.course-showcase-body {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem;
+}
+
+.course-showcase-tag {
+  font-size: 0.74rem;
+  color: #0b6f82;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.course-showcase-body h3 {
+  font-size: 1.15rem;
+}
+
+.course-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  color: #566978;
+  font-size: 0.82rem;
+}
+
+.course-progress-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: center;
+  color: #405361;
+  font-size: 0.82rem;
+}
+
+.course-progress-track {
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #dceaf0;
+  overflow: hidden;
+}
+
+.course-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #0b6f82, #24a2b8);
+}
+
 .options-grid {
   display: grid;
   gap: 0.4rem;
