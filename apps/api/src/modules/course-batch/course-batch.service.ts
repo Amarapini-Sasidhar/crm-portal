@@ -231,14 +231,26 @@ export class CourseBatchService {
       throw new ConflictException('Batch has reached maximum enrollment capacity.');
     }
 
-    const enrollment = this.studentEnrollmentsRepository.create({
-      studentId,
-      batchId: resolvedBatchId,
-      status: EnrollmentStatus.ACTIVE,
-      createdBy: studentId
-    });
+    const savedEnrollmentRows = await this.dataSource.query(
+      `
+        INSERT INTO crm.student_enrollments (
+          student_id,
+          batch_id,
+          status,
+          created_by
+        )
+        VALUES ($1, $2, $3, $4)
+        RETURNING
+          enrollment_id AS "enrollmentId",
+          student_id AS "studentId",
+          batch_id AS "batchId",
+          status::text AS "status",
+          enrolled_at AS "enrolledAt"
+      `,
+      [studentId, resolvedBatchId, EnrollmentStatus.ACTIVE, studentId]
+    );
+    const savedEnrollment = savedEnrollmentRows[0];
 
-    const savedEnrollment = await this.studentEnrollmentsRepository.save(enrollment);
     return {
       enrollmentId: savedEnrollment.enrollmentId,
       studentId: savedEnrollment.studentId,
@@ -259,12 +271,30 @@ export class CourseBatchService {
       throw new BadRequestException('Either batchId or courseId is required for enrollment.');
     }
 
-    const course = await this.coursesRepository.findOne({
-      where: {
-        courseId,
-        status: CourseStatus.ACTIVE
-      }
-    });
+    const courseRows = await this.dataSource.query(
+      `
+        SELECT
+          course_id AS "courseId",
+          course_name AS "courseName",
+          course_code AS "courseCode",
+          duration_days AS "durationDays",
+          created_by AS "createdBy"
+        FROM crm.courses
+        WHERE course_id = $1
+          AND status::text = $2
+        LIMIT 1
+      `,
+      [courseId, CourseStatus.ACTIVE]
+    );
+    const course = courseRows[0] as
+      | {
+          courseId: string;
+          courseName: string;
+          courseCode: string;
+          durationDays: number;
+          createdBy: string;
+        }
+      | undefined;
 
     if (!course) {
       throw new NotFoundException('Active course not found.');
@@ -292,19 +322,34 @@ export class CourseBatchService {
     const normalizedEndDate = endDate.toISOString().slice(0, 10);
     const batchCode = await this.generateBatchCode(course.courseCode, this.batchesRepository);
 
-    const batch = this.batchesRepository.create({
-      courseId,
-      batchCode,
-      batchName: `${course.courseName} - Open Batch`.slice(0, 150),
-      startDate: normalizedStartDate,
-      endDate: normalizedEndDate,
-      capacity: DEFAULT_BATCH_CAPACITY,
-      status: this.deriveBatchStatus(normalizedStartDate, normalizedEndDate),
-      createdBy: studentId
-    });
+    const savedBatchRows = await this.dataSource.query(
+      `
+        INSERT INTO crm.batches (
+          course_id,
+          batch_code,
+          batch_name,
+          start_date,
+          end_date,
+          capacity,
+          status,
+          created_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING batch_id AS "batchId"
+      `,
+      [
+        courseId,
+        batchCode,
+        `${course.courseName} - Open Batch`.slice(0, 150),
+        normalizedStartDate,
+        normalizedEndDate,
+        DEFAULT_BATCH_CAPACITY,
+        this.deriveBatchStatus(normalizedStartDate, normalizedEndDate),
+        course.createdBy
+      ]
+    );
 
-    const savedBatch = await this.batchesRepository.save(batch);
-    return savedBatch.batchId;
+    return String(savedBatchRows[0].batchId);
   }
 
   async completeVideoCourse(studentId: string, enrollmentId: string) {
