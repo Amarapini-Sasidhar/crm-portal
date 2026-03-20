@@ -72,7 +72,6 @@ export function ForgotPasswordPage() {
             />
           </label>
 
-          <HintMessage message="The reset link is designed to stay reusable for the same account." />
           {error && <ErrorMessage message={error} />}
           {success && <SuccessMessage message={success} />}
 
