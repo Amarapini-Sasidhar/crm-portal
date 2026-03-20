@@ -308,40 +308,47 @@ export class DashboardsService {
       (4000000000000000000n + BigInt(item.enrollmentId)).toString()
     );
     const courseCertificates = completionResultIds.length
-      ? await this.certificatesRepository
-          .createQueryBuilder('certificate')
-          .select('certificate.result_id', 'resultId')
-          .addSelect('certificate.certificate_no', 'certificateNo')
-          .where('certificate.result_id IN (:...resultIds)', { resultIds: completionResultIds })
-          .andWhere('certificate.revoked = false')
-          .getRawMany<{ resultId: string; certificateNo: string }>()
+      ? ((await this.dataSource.query(
+          `
+            SELECT
+              result_id AS "resultId",
+              certificate_no AS "certificateNo"
+            FROM crm.certificates
+            WHERE result_id = ANY($1::bigint[])
+              AND revoked = false
+          `,
+          [completionResultIds]
+        )) as Array<{ resultId: string; certificateNo: string }>)
       : [];
     const certificateNoByResultId = new Map(
       courseCertificates.map((item) => [String(item.resultId), String(item.certificateNo)])
     );
 
-    const attemptedExams = await this.examAttemptsRepository
-      .createQueryBuilder('attempt')
-      .innerJoin(Exam, 'exam', 'exam.examId = attempt.examId')
-      .leftJoin(ExamResult, 'result', 'result.attemptId = attempt.attemptId')
-      .select('exam.examId', 'examId')
-      .addSelect('exam.title', 'examTitle')
-      .addSelect('COUNT(attempt.attemptId)', 'attemptsCount')
-      .addSelect('MAX(attempt.attemptNo)', 'latestAttemptNo')
-      .addSelect('MAX(attempt.startedAt)', 'lastAttemptAt')
-      .addSelect('COALESCE(MAX(result.scorePercentage), 0)', 'bestScore')
-      .where('attempt.studentId = :studentId', { studentId })
-      .groupBy('exam.examId')
-      .addGroupBy('exam.title')
-      .orderBy('MAX(attempt.startedAt)', 'DESC')
-      .getRawMany<{
-        examId: string;
-        examTitle: string;
-        attemptsCount: string;
-        latestAttemptNo: string;
-        lastAttemptAt: Date;
-        bestScore: string;
-      }>();
+    const attemptedExams = (await this.dataSource.query(
+      `
+        SELECT
+          exam.exam_id AS "examId",
+          exam.title AS "examTitle",
+          COUNT(attempt.attempt_id)::int AS "attemptsCount",
+          MAX(attempt.attempt_no)::int AS "latestAttemptNo",
+          MAX(attempt.started_at) AS "lastAttemptAt",
+          COALESCE(MAX(result.score_percentage), 0) AS "bestScore"
+        FROM crm.exam_attempts attempt
+        INNER JOIN crm.exams exam ON exam.exam_id = attempt.exam_id
+        LEFT JOIN crm.exam_results result ON result.attempt_id = attempt.attempt_id
+        WHERE attempt.student_id = $1
+        GROUP BY exam.exam_id, exam.title
+        ORDER BY MAX(attempt.started_at) DESC
+      `,
+      [studentId]
+    )) as Array<{
+      examId: string;
+      examTitle: string;
+      attemptsCount: string;
+      latestAttemptNo: string;
+      lastAttemptAt: Date;
+      bestScore: string;
+    }>;
 
     const enrolledCourseIds = [...new Set(enrolledCourses.map((item) => item.courseId))];
     const openBatches = await this.dataSource.query(
@@ -419,29 +426,33 @@ export class DashboardsService {
         };
       });
 
-    const results = await this.examResultsRepository
-      .createQueryBuilder('result')
-      .innerJoin(Exam, 'exam', 'exam.examId = result.examId')
-      .select('result.resultId', 'resultId')
-      .addSelect('result.examId', 'examId')
-      .addSelect('exam.title', 'examTitle')
-      .addSelect('result.marksObtained', 'marksObtained')
-      .addSelect('result.maxMarks', 'maxMarks')
-      .addSelect('result.scorePercentage', 'scorePercentage')
-      .addSelect('result.passed', 'passed')
-      .addSelect('result.evaluatedAt', 'evaluatedAt')
-      .where('result.studentId = :studentId', { studentId })
-      .orderBy('result.evaluatedAt', 'DESC')
-      .getRawMany<{
-        resultId: string;
-        examId: string;
-        examTitle: string;
-        marksObtained: string;
-        maxMarks: string;
-        scorePercentage: string;
-        passed: boolean;
-        evaluatedAt: Date;
-      }>();
+    const results = (await this.dataSource.query(
+      `
+        SELECT
+          result.result_id AS "resultId",
+          result.exam_id AS "examId",
+          exam.title AS "examTitle",
+          result.marks_obtained AS "marksObtained",
+          result.max_marks AS "maxMarks",
+          result.score_percentage AS "scorePercentage",
+          result.passed AS "passed",
+          result.evaluated_at AS "evaluatedAt"
+        FROM crm.exam_results result
+        INNER JOIN crm.exams exam ON exam.exam_id = result.exam_id
+        WHERE result.student_id = $1
+        ORDER BY result.evaluated_at DESC
+      `,
+      [studentId]
+    )) as Array<{
+      resultId: string;
+      examId: string;
+      examTitle: string;
+      marksObtained: string;
+      maxMarks: string;
+      scorePercentage: string;
+      passed: boolean;
+      evaluatedAt: Date;
+    }>;
 
     const uniqueCourseIds = [...new Set(enrolledCourses.map((item) => item.courseId))];
     const attemptedExamIds = [...new Set(attemptedExams.map((item) => item.examId))];
