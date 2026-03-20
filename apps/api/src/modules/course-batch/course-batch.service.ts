@@ -54,25 +54,56 @@ export class CourseBatchService {
       throw new ConflictException('Course with this name already exists.');
     }
 
-    const courseCode = await this.generateCourseCode(normalizedName);
+    const savedCourse = await this.dataSource.transaction(async (manager) => {
+      const courseRepo = manager.getRepository(Course);
+      const batchRepo = manager.getRepository(Batch);
+      const courseCode = await this.generateCourseCode(normalizedName);
 
-    const course = this.coursesRepository.create({
-      courseCode,
-      courseName: buildImpactCourseTitle(
-        normalizedName,
-        extractCourseVideoUrl(payload.description)
-      ),
-      description:
-        appendCourseVideoToDescription(
-          payload.description,
-          extractCourseVideoUrl(payload.description) ?? undefined
-        ) ?? null,
-      durationDays: payload.duration,
-      status: CourseStatus.ACTIVE,
-      createdBy: adminUserId
+      const course = courseRepo.create({
+        courseCode,
+        courseName: buildImpactCourseTitle(
+          normalizedName,
+          extractCourseVideoUrl(payload.description)
+        ),
+        description:
+          appendCourseVideoToDescription(
+            payload.description,
+            extractCourseVideoUrl(payload.description) ?? undefined
+          ) ?? null,
+        durationDays: payload.duration,
+        status: CourseStatus.ACTIVE,
+        createdBy: adminUserId
+      });
+
+      const createdCourse = await courseRepo.save(course);
+
+      // Every course gets a default open batch so students can immediately see and enroll in it.
+      const startDate = new Date();
+      startDate.setUTCHours(0, 0, 0, 0);
+      const endDate = new Date(startDate);
+      endDate.setUTCDate(endDate.getUTCDate() + Math.max(0, payload.duration - 1));
+
+      const normalizedStartDate = startDate.toISOString().slice(0, 10);
+      const normalizedEndDate = endDate.toISOString().slice(0, 10);
+      const batchCode = await this.generateBatchCode(createdCourse.courseCode, batchRepo);
+      const batchName = `${createdCourse.courseName} - Open Batch`.slice(0, 150);
+
+      const batch = batchRepo.create({
+        courseId: createdCourse.courseId,
+        batchCode,
+        batchName,
+        startDate: normalizedStartDate,
+        endDate: normalizedEndDate,
+        capacity: DEFAULT_BATCH_CAPACITY,
+        status: this.deriveBatchStatus(normalizedStartDate, normalizedEndDate),
+        createdBy: adminUserId
+      });
+
+      await batchRepo.save(batch);
+
+      return createdCourse;
     });
 
-    const savedCourse = await this.coursesRepository.save(course);
     return this.toCourseResponse(savedCourse);
   }
 
