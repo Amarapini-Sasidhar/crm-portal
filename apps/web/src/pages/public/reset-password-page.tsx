@@ -1,5 +1,5 @@
-import { FormEvent, useMemo, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { apiRequest, ApiError } from '../../lib/api-client';
 import { endpoints } from '../../lib/endpoints';
 import type { ApiMessageResponse } from '../../types/api';
@@ -14,12 +14,27 @@ function getToken(search: string): string {
 
 export function ResetPasswordPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const token = useMemo(() => getToken(location.search), [location.search]);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!success) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      navigate('/login', { replace: true });
+    }, 1800);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [navigate, success]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
