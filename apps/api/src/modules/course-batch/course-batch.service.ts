@@ -42,11 +42,10 @@ export class CourseBatchService {
     private readonly dataSource: DataSource
   ) {}
 
-  async createCourse(adminUserId: string, payload: CreateCourseDto) {
+  async createCourse(adminUserId: string, actorRole: Role, payload: CreateCourseDto) {
     const normalizedName = payload.name.trim();
-    const actor = await this.usersService.findById(adminUserId);
 
-    if (!actor || ![Role.ADMIN, Role.SUPER_ADMIN].includes(actor.role)) {
+    if (![Role.ADMIN, Role.SUPER_ADMIN].includes(actorRole)) {
       throw new UnprocessableEntityException('Only admin and super admin users can create courses.');
     }
 
@@ -74,7 +73,7 @@ export class CourseBatchService {
           description,
           durationDays: payload.duration,
           status: CourseStatus.ACTIVE,
-          createdBy: actor.userId
+          createdBy: adminUserId
         });
 
         return courseRepo.save(course);

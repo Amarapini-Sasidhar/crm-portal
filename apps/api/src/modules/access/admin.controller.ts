@@ -35,7 +35,7 @@ export class AdminController {
 
   @Post('courses')
   createCourse(@CurrentUser() currentUser: AuthenticatedUser, @Body() payload: CreateCourseDto) {
-    return this.courseBatchService.createCourse(currentUser.userId, payload);
+    return this.courseBatchService.createCourse(currentUser.userId, currentUser.role, payload);
   }
 
   @Post('batches')
