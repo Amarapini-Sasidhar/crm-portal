@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Role } from '../../common/enums/role.enum';
 import { BatchStatus } from '../../common/enums/batch-status.enum';
 import { CourseStatus } from '../../common/enums/course-status.enum';
@@ -34,7 +34,8 @@ export class DashboardsService {
     @InjectRepository(ExamAttempt)
     private readonly examAttemptsRepository: Repository<ExamAttempt>,
     @InjectRepository(ExamResult)
-    private readonly examResultsRepository: Repository<ExamResult>
+    private readonly examResultsRepository: Repository<ExamResult>,
+    private readonly dataSource: DataSource
   ) {}
 
   async getAdminDashboard() {
@@ -268,36 +269,40 @@ export class DashboardsService {
   }
 
   async getStudentDashboard(studentId: string) {
-    const enrolledCourses = await this.studentEnrollmentsRepository
-      .createQueryBuilder('enrollment')
-      .innerJoin(Batch, 'batch', 'batch.batchId = enrollment.batchId')
-      .innerJoin(Course, 'course', 'course.courseId = batch.courseId')
-      .select('enrollment.enrollmentId', 'enrollmentId')
-      .addSelect('enrollment.status', 'enrollmentStatus')
-      .addSelect('enrollment.enrolledAt', 'enrolledAt')
-      .addSelect('batch.batchId', 'batchId')
-      .addSelect('batch.batchName', 'batchName')
-      .addSelect('batch.startDate', 'batchStartDate')
-      .addSelect('batch.endDate', 'batchEndDate')
-      .addSelect('course.courseId', 'courseId')
-      .addSelect('course.courseName', 'courseName')
-      .addSelect('course.description', 'courseDescription')
-      .addSelect('course.durationDays', 'durationDays')
-      .where('enrollment.studentId = :studentId', { studentId })
-      .orderBy('enrollment.enrolledAt', 'DESC')
-      .getRawMany<{
-        enrollmentId: string;
-        enrollmentStatus: string;
-        enrolledAt: Date;
-        batchId: string;
-        batchName: string;
-        batchStartDate: string;
-        batchEndDate: string;
-        courseId: string;
-        courseName: string;
-        courseDescription: string | null;
-        durationDays: string;
-      }>();
+    const enrolledCourses = await this.dataSource.query(
+      `
+        SELECT
+          enrollment.enrollment_id AS "enrollmentId",
+          enrollment.status::text AS "enrollmentStatus",
+          enrollment.enrolled_at AS "enrolledAt",
+          batch.batch_id AS "batchId",
+          batch.batch_name AS "batchName",
+          batch.start_date AS "batchStartDate",
+          batch.end_date AS "batchEndDate",
+          course.course_id AS "courseId",
+          course.course_name AS "courseName",
+          course.description AS "courseDescription",
+          course.duration_days AS "durationDays"
+        FROM crm.student_enrollments enrollment
+        INNER JOIN crm.batches batch ON batch.batch_id = enrollment.batch_id
+        INNER JOIN crm.courses course ON course.course_id = batch.course_id
+        WHERE enrollment.student_id = $1
+        ORDER BY enrollment.enrolled_at DESC
+      `,
+      [studentId]
+    ) as Array<{
+      enrollmentId: string;
+      enrollmentStatus: string;
+      enrolledAt: Date;
+      batchId: string;
+      batchName: string;
+      batchStartDate: string;
+      batchEndDate: string;
+      courseId: string;
+      courseName: string;
+      courseDescription: string | null;
+      durationDays: string;
+    }>;
 
     const completionResultIds = enrolledCourses.map((item) =>
       (4000000000000000000n + BigInt(item.enrollmentId)).toString()
@@ -339,33 +344,58 @@ export class DashboardsService {
       }>();
 
     const enrolledCourseIds = [...new Set(enrolledCourses.map((item) => item.courseId))];
-    const openBatches = await this.batchesRepository.find({
-      where: {
-        status: In([BatchStatus.ACTIVE, BatchStatus.PLANNED])
-      },
-      order: {
-        startDate: 'ASC'
-      }
-    });
-    const firstOpenBatchByCourseId = new Map<string, Batch>();
+    const openBatches = await this.dataSource.query(
+      `
+        SELECT
+          batch_id AS "batchId",
+          course_id AS "courseId",
+          batch_name AS "batchName",
+          batch_code AS "batchCode",
+          status::text AS "status",
+          start_date AS "startDate",
+          end_date AS "endDate",
+          capacity AS "capacity"
+        FROM crm.batches
+        WHERE status::text IN ('ACTIVE', 'PLANNED')
+        ORDER BY start_date ASC
+      `
+    ) as Array<{
+      batchId: string;
+      courseId: string;
+      batchName: string;
+      batchCode: string;
+      status: string;
+      startDate: string;
+      endDate: string;
+      capacity: number;
+    }>;
+    const firstOpenBatchByCourseId = new Map<string, (typeof openBatches)[number]>();
     for (const batch of openBatches) {
       if (!firstOpenBatchByCourseId.has(batch.courseId)) {
         firstOpenBatchByCourseId.set(batch.courseId, batch);
       }
     }
 
-    const availableCourseRows = await this.coursesRepository.find({
-      where: enrolledCourseIds.length > 0
-        ? {
-            status: CourseStatus.ACTIVE
-          }
-        : {
-            status: CourseStatus.ACTIVE
-          },
-      order: {
-        createdAt: 'DESC'
-      }
-    });
+    const availableCourseRows = await this.dataSource.query(
+      `
+        SELECT
+          course_id AS "courseId",
+          course_name AS "courseName",
+          description AS "description",
+          duration_days AS "durationDays",
+          created_at AS "createdAt"
+        FROM crm.courses
+        WHERE status::text = $1
+        ORDER BY created_at DESC
+      `,
+      [CourseStatus.ACTIVE]
+    ) as Array<{
+      courseId: string;
+      courseName: string;
+      description: string | null;
+      durationDays: number;
+      createdAt: string;
+    }>;
     const availableCourses = availableCourseRows
       .filter((course) => !enrolledCourseIds.includes(course.courseId))
       .map((course) => {
