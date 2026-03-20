@@ -143,7 +143,7 @@ export class CourseBatchService {
       const batchRepo = manager.getRepository(Batch);
       const assignmentRepo = manager.getRepository(BatchFacultyAssignment);
 
-      const batchCode = await this.generateBatchCode(course.courseCode, batchRepo);
+      const batchCode = await this.generateBatchCode(course.courseCode);
       const batchName = this.generateBatchName(course.courseName, startDate);
 
       const batch = batchRepo.create({
@@ -203,7 +203,22 @@ export class CourseBatchService {
     }
 
     const resolvedBatchId = await this.resolveEnrollmentBatchId(studentId, payload);
-    const batch = await this.batchesRepository.findOne({ where: { batchId: resolvedBatchId } });
+    const batchRows = await this.dataSource.query(
+      `
+        SELECT
+          batch_id AS "batchId",
+          capacity AS "capacity",
+          status::text AS "status",
+          created_by AS "createdBy"
+        FROM crm.batches
+        WHERE batch_id = $1
+        LIMIT 1
+      `,
+      [resolvedBatchId]
+    );
+    const batch = batchRows[0] as
+      | { batchId: string; capacity: number; status: string; createdBy: string | null }
+      | undefined;
     if (!batch) {
       throw new NotFoundException('Batch not found.');
     }
@@ -212,20 +227,31 @@ export class CourseBatchService {
       throw new UnprocessableEntityException('Enrollment is not allowed for cancelled or completed batches.');
     }
 
-    const existingEnrollment = await this.studentEnrollmentsRepository.findOne({
-      where: { studentId, batchId: resolvedBatchId }
-    });
+    const existingEnrollmentRows = await this.dataSource.query(
+      `
+        SELECT enrollment_id
+        FROM crm.student_enrollments
+        WHERE student_id = $1
+          AND batch_id = $2
+        LIMIT 1
+      `,
+      [studentId, resolvedBatchId]
+    );
 
-    if (existingEnrollment) {
+    if (existingEnrollmentRows.length > 0) {
       throw new ConflictException('Student is already enrolled in this batch.');
     }
 
-    const currentEnrollmentCount = await this.studentEnrollmentsRepository.count({
-      where: {
-        batchId: resolvedBatchId,
-        status: In([EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED])
-      }
-    });
+    const currentEnrollmentCountRows = await this.dataSource.query(
+      `
+        SELECT COUNT(*)::int AS "count"
+        FROM crm.student_enrollments
+        WHERE batch_id = $1
+          AND status::text IN ('ACTIVE', 'COMPLETED')
+      `,
+      [resolvedBatchId]
+    );
+    const currentEnrollmentCount = Number(currentEnrollmentCountRows[0]?.count ?? 0);
 
     if (currentEnrollmentCount >= batch.capacity) {
       throw new ConflictException('Batch has reached maximum enrollment capacity.');
@@ -247,7 +273,7 @@ export class CourseBatchService {
           status::text AS "status",
           enrolled_at AS "enrolledAt"
       `,
-      [studentId, resolvedBatchId, EnrollmentStatus.ACTIVE, studentId]
+      [studentId, resolvedBatchId, EnrollmentStatus.ACTIVE, batch.createdBy ?? studentId]
     );
     const savedEnrollment = savedEnrollmentRows[0];
 
@@ -300,18 +326,20 @@ export class CourseBatchService {
       throw new NotFoundException('Active course not found.');
     }
 
-    const existingOpenBatch = await this.batchesRepository.findOne({
-      where: {
-        courseId,
-        status: In([BatchStatus.ACTIVE, BatchStatus.PLANNED])
-      },
-      order: {
-        startDate: 'ASC'
-      }
-    });
+    const existingOpenBatchRows = await this.dataSource.query(
+      `
+        SELECT batch_id AS "batchId"
+        FROM crm.batches
+        WHERE course_id = $1
+          AND status::text IN ('ACTIVE', 'PLANNED')
+        ORDER BY start_date ASC
+        LIMIT 1
+      `,
+      [courseId]
+    );
 
-    if (existingOpenBatch) {
-      return existingOpenBatch.batchId;
+    if (existingOpenBatchRows.length > 0) {
+      return String(existingOpenBatchRows[0].batchId);
     }
 
     const today = new Date();
@@ -320,7 +348,7 @@ export class CourseBatchService {
     endDate.setUTCDate(endDate.getUTCDate() + Math.max(0, course.durationDays - 1));
     const normalizedStartDate = today.toISOString().slice(0, 10);
     const normalizedEndDate = endDate.toISOString().slice(0, 10);
-    const batchCode = await this.generateBatchCode(course.courseCode, this.batchesRepository);
+    const batchCode = await this.generateBatchCode(course.courseCode);
 
     const savedBatchRows = await this.dataSource.query(
       `
@@ -469,19 +497,20 @@ export class CourseBatchService {
     return `${base}${nextSequence}`.slice(0, 30);
   }
 
-  private async generateBatchCode(
-    courseCode: string,
-    batchRepo: Repository<Batch>
-  ): Promise<string> {
+  private async generateBatchCode(courseCode: string): Promise<string> {
     const prefix = `B-${courseCode}`.slice(0, 20).toUpperCase();
 
-    const latestBatchCode = await batchRepo
-      .createQueryBuilder('batch')
-      .select('batch.batch_code', 'batchCode')
-      .where('batch.batch_code LIKE :prefix', { prefix: `${prefix}%` })
-      .orderBy('batch.batch_code', 'DESC')
-      .limit(1)
-      .getRawOne<{ batchCode?: string }>();
+    const latestBatchCodeRows = await this.dataSource.query(
+      `
+        SELECT batch_code AS "batchCode"
+        FROM crm.batches
+        WHERE batch_code LIKE $1
+        ORDER BY batch_code DESC
+        LIMIT 1
+      `,
+      [`${prefix}%`]
+    );
+    const latestBatchCode = latestBatchCodeRows[0] as { batchCode?: string } | undefined;
 
     const nextSequence = latestBatchCode?.batchCode
       ? (Number(latestBatchCode.batchCode.match(/(\d+)$/)?.[1] ?? '0') + 1).toString()
