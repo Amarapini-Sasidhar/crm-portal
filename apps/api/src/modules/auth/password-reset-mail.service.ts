@@ -1,6 +1,6 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 @Injectable()
 export class PasswordResetMailService {
@@ -8,31 +8,18 @@ export class PasswordResetMailService {
 
   async sendPasswordResetEmail(input: { email: string; firstName: string; resetUrl: string }) {
     const mailFrom = this.configService.get<string>('MAIL_FROM', '').trim();
-    const host = this.configService.get<string>('SMTP_HOST', '').trim();
-    const user = this.configService.get<string>('SMTP_USER', '').trim();
-    const password = this.configService.get<string>('SMTP_PASSWORD', '');
-    const port = Number(this.configService.get<number>('SMTP_PORT', 587));
-    const secure = this.configService.get<boolean>('SMTP_SECURE', false);
+    const resendApiKey = this.configService.get<string>('RESEND_API_KEY', '').trim();
 
-    if (!mailFrom || !host || !user || !password) {
+    if (!mailFrom || !resendApiKey) {
       throw new InternalServerErrorException(
-        'Password reset email is not configured. Set SMTP and MAIL_FROM environment variables.'
+        'Password reset email is not configured. Set RESEND_API_KEY and MAIL_FROM environment variables.'
       );
     }
 
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure,
-      auth: {
-        user,
-        pass: password
-      }
-    });
-
-    await transporter.sendMail({
+    const resend = new Resend(resendApiKey);
+    const { error } = await resend.emails.send({
       from: mailFrom,
-      to: input.email,
+      to: [input.email],
       subject: 'Reset your CRM Portal password',
       text: [
         `Hello ${input.firstName},`,
@@ -63,6 +50,10 @@ export class PasswordResetMailService {
         </div>
       `
     });
+
+    if (error) {
+      throw new InternalServerErrorException(error.message);
+    }
   }
 
   private escapeHtml(value: string): string {

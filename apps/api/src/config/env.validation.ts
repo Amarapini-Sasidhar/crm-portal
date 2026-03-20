@@ -15,10 +15,6 @@ export const envValidationSchema = Joi.object({
   BCRYPT_SALT_ROUNDS: Joi.number().min(10).max(14).default(12),
   APP_BASE_URL: Joi.string().uri({ scheme: [/https?/] }).default('http://localhost:4000'),
   FRONTEND_BASE_URL: Joi.string().uri({ scheme: [/https?/] }).default('http://localhost:5173'),
-  SMTP_HOST: Joi.string().allow('').default(''),
-  SMTP_PORT: Joi.number().port().default(587),
-  SMTP_SECURE: Joi.boolean().default(false),
-  SMTP_USER: Joi.string().allow('').default(''),
-  SMTP_PASSWORD: Joi.string().allow('').default(''),
-  MAIL_FROM: Joi.string().email().allow('').default('')
+  RESEND_API_KEY: Joi.string().allow('').default(''),
+  MAIL_FROM: Joi.string().allow('').default('')
 });
