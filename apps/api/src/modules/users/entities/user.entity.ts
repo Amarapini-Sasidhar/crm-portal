@@ -19,9 +19,9 @@ export class User {
   userId!: string;
 
   @Column({
-    type: 'enum',
-    enum: Role,
-    enumName: 'user_role'
+    name: 'role',
+    type: 'varchar',
+    length: 30
   })
   role!: Role;
 
@@ -41,9 +41,9 @@ export class User {
   passwordHash!: string;
 
   @Column({
-    type: 'enum',
-    enum: UserStatus,
-    enumName: 'user_status',
+    name: 'status',
+    type: 'varchar',
+    length: 30,
     default: UserStatus.ACTIVE
   })
   status!: UserStatus;
