@@ -115,6 +115,20 @@ export type StudentDashboardResponse = {
     batchStartDate: string;
     batchEndDate: string;
   }>;
+  availableCourses: Array<{
+    courseId: string;
+    courseName: string;
+    courseShortTitle: string;
+    videoUrl: string | null;
+    durationDays: number;
+    batchId: string;
+    batchName: string;
+    batchCode: string;
+    batchStatus: string;
+    batchStartDate: string;
+    batchEndDate: string;
+    capacity: number;
+  }>;
   attemptedExams: Array<{
     examId: string;
     examTitle: string;

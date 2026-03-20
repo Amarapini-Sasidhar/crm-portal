@@ -8,6 +8,7 @@ import { useApiTask } from '../../hooks/use-api-task';
 import { formatDate, formatDateTime } from '../../lib/format';
 
 type EnrolledCourse = StudentDashboardResponse['enrolledCourses'][number];
+type AvailableCourse = StudentDashboardResponse['availableCourses'][number];
 
 type CourseCompletionResponse = {
   enrollmentId: string;
@@ -129,6 +130,33 @@ export function MyCoursesPage() {
 
     setBatchId('');
     await loadDashboard();
+  }
+
+  async function enrollFromCard(course: AvailableCourse) {
+    const response = await enrollTask.run(
+      () =>
+        apiRequest<{
+          enrollmentId: string;
+          studentId: string;
+          batchId: string;
+          status: string;
+          enrolledAt: string;
+        }>(endpoints.student.enrollments, {
+          method: 'POST',
+          body: {
+            batchId: course.batchId
+          }
+        }),
+      `Enrolled in ${course.courseShortTitle}.`
+    );
+
+    if (!response) {
+      return;
+    }
+
+    setCourseActionMessage(`Enrollment completed for ${course.courseShortTitle}.`);
+    await loadDashboard();
+    setSelectedEnrollmentId(response.enrollmentId);
   }
 
   const selectedCourse = useMemo<EnrolledCourse | null>(() => {
@@ -303,22 +331,18 @@ export function MyCoursesPage() {
       </Panel>
 
       <Panel
-        subtitle="A Mind Luster style browsing section for enrolled video-based courses."
+        subtitle="Browse courses you can enroll in now, with banner cards and quick actions."
         title="Available Courses"
       >
-        {data?.enrolledCourses.some((course) => Boolean(course.videoUrl)) ? (
+        {data?.availableCourses.length ? (
           <div className="course-catalog-grid">
-            {data.enrolledCourses
+            {data.availableCourses
               .filter((course) => Boolean(course.videoUrl))
               .map((course) => {
-                const isSelected = selectedCourse?.enrollmentId === course.enrollmentId;
                 const thumbnailUrl = getThumbnailUrl(course.videoUrl);
 
                 return (
-                  <article
-                    className={isSelected ? 'course-showcase-card course-showcase-card-active' : 'course-showcase-card'}
-                    key={course.enrollmentId}
-                  >
+                  <article className="course-showcase-card" key={course.batchId}>
                     <div className="course-banner-wrap">
                       {thumbnailUrl ? (
                         <img
@@ -342,27 +366,18 @@ export function MyCoursesPage() {
                         <span>1 lesson</span>
                       </div>
 
-                      <div className="course-progress-row">
-                        <div className="course-progress-track">
-                          <span
-                            className="course-progress-fill"
-                            style={{ width: `${course.completionPercentage}%` }}
-                          />
-                        </div>
-                        <span>{course.completionPercentage}%</span>
-                      </div>
+                      <p className="tiny muted">
+                        Batch: {course.batchName} | Starts: {formatDate(course.batchStartDate)}
+                      </p>
 
                       <div className="inline-actions">
                         <button
                           className="btn"
-                          onClick={() => {
-                            setSelectedEnrollmentId(course.enrollmentId);
-                            setCourseActionMessage(null);
-                            setProgressPercent(course.completionPercentage);
-                          }}
+                          disabled={enrollTask.loading}
+                          onClick={() => void enrollFromCard(course)}
                           type="button"
                         >
-                          {isSelected ? 'Watching Now' : 'Open Course'}
+                          {enrollTask.loading ? 'Enrolling...' : 'Enroll Now'}
                         </button>
                       </div>
                     </div>
@@ -371,13 +386,13 @@ export function MyCoursesPage() {
               })}
           </div>
         ) : (
-          <HintMessage message="No video-backed courses are available in your enrollments yet." />
+          <HintMessage message="No new courses are currently available for enrollment." />
         )}
       </Panel>
 
       <Panel
         subtitle="Watch the linked course video and earn your certificate after full completion."
-        title="Course Player"
+        title="Enrolled Course Player"
       >
         {selectedCourse?.videoUrl ? (
           <>

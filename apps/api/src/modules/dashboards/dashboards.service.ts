@@ -2,6 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Role } from '../../common/enums/role.enum';
+import { BatchStatus } from '../../common/enums/batch-status.enum';
+import { CourseStatus } from '../../common/enums/course-status.enum';
 import { Certificate } from '../certificates/entities/certificate.entity';
 import { Batch } from '../course-batch/entities/batch.entity';
 import { Course } from '../course-batch/entities/course.entity';
@@ -19,6 +21,8 @@ export class DashboardsService {
     private readonly usersRepository: Repository<User>,
     @InjectRepository(Course)
     private readonly coursesRepository: Repository<Course>,
+    @InjectRepository(Batch)
+    private readonly batchesRepository: Repository<Batch>,
     @InjectRepository(Exam)
     private readonly examsRepository: Repository<Exam>,
     @InjectRepository(StudentEnrollment)
@@ -332,6 +336,45 @@ export class DashboardsService {
         bestScore: string;
       }>();
 
+    const enrolledBatchIds = enrolledCourses.map((item) => item.batchId);
+    const availableCourses = await this.batchesRepository
+      .createQueryBuilder('batch')
+      .innerJoin(Course, 'course', 'course.courseId = batch.courseId')
+      .select('batch.batchId', 'batchId')
+      .addSelect('batch.batchName', 'batchName')
+      .addSelect('batch.batchCode', 'batchCode')
+      .addSelect('batch.startDate', 'batchStartDate')
+      .addSelect('batch.endDate', 'batchEndDate')
+      .addSelect('batch.capacity', 'capacity')
+      .addSelect('batch.status', 'batchStatus')
+      .addSelect('course.courseId', 'courseId')
+      .addSelect('course.courseName', 'courseName')
+      .addSelect('course.description', 'courseDescription')
+      .addSelect('course.durationDays', 'durationDays')
+      .where('course.status = :courseStatus', { courseStatus: CourseStatus.ACTIVE })
+      .andWhere('batch.status IN (:...batchStatuses)', {
+        batchStatuses: [BatchStatus.PLANNED, BatchStatus.ACTIVE]
+      })
+      .andWhere(
+        enrolledBatchIds.length > 0 ? 'batch.batchId NOT IN (:...enrolledBatchIds)' : '1 = 1',
+        { enrolledBatchIds }
+      )
+      .orderBy('batch.startDate', 'ASC')
+      .addOrderBy('course.courseName', 'ASC')
+      .getRawMany<{
+        batchId: string;
+        batchName: string;
+        batchCode: string;
+        batchStartDate: string;
+        batchEndDate: string;
+        capacity: string;
+        batchStatus: string;
+        courseId: string;
+        courseName: string;
+        courseDescription: string | null;
+        durationDays: string;
+      }>();
+
     const results = await this.examResultsRepository
       .createQueryBuilder('result')
       .innerJoin(Exam, 'exam', 'exam.examId = result.examId')
@@ -389,6 +432,35 @@ export class DashboardsService {
         batchName: item.batchName,
         batchStartDate: item.batchStartDate,
         batchEndDate: item.batchEndDate
+      })),
+      availableCourses: availableCourses.map((item: {
+        batchId: string;
+        batchName: string;
+        batchCode: string;
+        batchStartDate: string;
+        batchEndDate: string;
+        capacity: string;
+        batchStatus: string;
+        courseId: string;
+        courseName: string;
+        courseDescription: string | null;
+        durationDays: string;
+      }) => ({
+        courseId: item.courseId,
+        courseName: item.courseName,
+        courseShortTitle: buildImpactCourseTitle(
+          item.courseName,
+          extractCourseVideoUrl(item.courseDescription)
+        ),
+        videoUrl: extractCourseVideoUrl(item.courseDescription),
+        durationDays: this.toNumber(item.durationDays),
+        batchId: item.batchId,
+        batchName: item.batchName,
+        batchCode: item.batchCode,
+        batchStatus: item.batchStatus,
+        batchStartDate: item.batchStartDate,
+        batchEndDate: item.batchEndDate,
+        capacity: this.toNumber(item.capacity)
       })),
       attemptedExams: attemptedExams.map((item) => ({
         examId: item.examId,
