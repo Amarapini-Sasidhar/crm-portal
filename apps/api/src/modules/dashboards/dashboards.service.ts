@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Role } from '../../common/enums/role.enum';
 import { BatchStatus } from '../../common/enums/batch-status.enum';
 import { CourseStatus } from '../../common/enums/course-status.enum';
@@ -13,6 +13,8 @@ import { Exam } from '../faculty-exams/entities/exam.entity';
 import { User } from '../users/entities/user.entity';
 import { ExamAttempt } from '../student-attempts/entities/exam-attempt.entity';
 import { ExamResult } from '../student-attempts/entities/exam-result.entity';
+
+const DEFAULT_OPEN_COURSE_CAPACITY = 100;
 
 @Injectable()
 export class DashboardsService {
@@ -336,44 +338,56 @@ export class DashboardsService {
         bestScore: string;
       }>();
 
-    const enrolledBatchIds = enrolledCourses.map((item) => item.batchId);
-    const availableCourses = await this.batchesRepository
-      .createQueryBuilder('batch')
-      .innerJoin(Course, 'course', 'course.courseId = batch.courseId')
-      .select('batch.batchId', 'batchId')
-      .addSelect('batch.batchName', 'batchName')
-      .addSelect('batch.batchCode', 'batchCode')
-      .addSelect('batch.startDate', 'batchStartDate')
-      .addSelect('batch.endDate', 'batchEndDate')
-      .addSelect('batch.capacity', 'capacity')
-      .addSelect('batch.status', 'batchStatus')
-      .addSelect('course.courseId', 'courseId')
-      .addSelect('course.courseName', 'courseName')
-      .addSelect('course.description', 'courseDescription')
-      .addSelect('course.durationDays', 'durationDays')
-      .where('course.status = :courseStatus', { courseStatus: CourseStatus.ACTIVE })
-      .andWhere('batch.status IN (:...batchStatuses)', {
-        batchStatuses: [BatchStatus.PLANNED, BatchStatus.ACTIVE]
-      })
-      .andWhere(
-        enrolledBatchIds.length > 0 ? 'batch.batchId NOT IN (:...enrolledBatchIds)' : '1 = 1',
-        { enrolledBatchIds }
-      )
-      .orderBy('batch.startDate', 'ASC')
-      .addOrderBy('course.courseName', 'ASC')
-      .getRawMany<{
-        batchId: string;
-        batchName: string;
-        batchCode: string;
-        batchStartDate: string;
-        batchEndDate: string;
-        capacity: string;
-        batchStatus: string;
-        courseId: string;
-        courseName: string;
-        courseDescription: string | null;
-        durationDays: string;
-      }>();
+    const enrolledCourseIds = [...new Set(enrolledCourses.map((item) => item.courseId))];
+    const openBatches = await this.batchesRepository.find({
+      where: {
+        status: In([BatchStatus.ACTIVE, BatchStatus.PLANNED])
+      },
+      order: {
+        startDate: 'ASC'
+      }
+    });
+    const firstOpenBatchByCourseId = new Map<string, Batch>();
+    for (const batch of openBatches) {
+      if (!firstOpenBatchByCourseId.has(batch.courseId)) {
+        firstOpenBatchByCourseId.set(batch.courseId, batch);
+      }
+    }
+
+    const availableCourseRows = await this.coursesRepository.find({
+      where: enrolledCourseIds.length > 0
+        ? {
+            status: CourseStatus.ACTIVE
+          }
+        : {
+            status: CourseStatus.ACTIVE
+          },
+      order: {
+        createdAt: 'DESC'
+      }
+    });
+    const availableCourses = availableCourseRows
+      .filter((course) => !enrolledCourseIds.includes(course.courseId))
+      .map((course) => {
+        const batch = firstOpenBatchByCourseId.get(course.courseId);
+        return {
+          courseId: course.courseId,
+          courseName: course.courseName,
+          courseDescription: course.description,
+          durationDays: String(course.durationDays),
+          batchId: batch?.batchId ?? null,
+          batchName: batch?.batchName ?? 'Open Enrollment',
+          batchCode: batch?.batchCode ?? null,
+          batchStatus: batch?.status ?? BatchStatus.ACTIVE,
+          batchStartDate: batch?.startDate ?? new Date().toISOString().slice(0, 10),
+          batchEndDate:
+            batch?.endDate ??
+            new Date(Date.now() + Math.max(0, course.durationDays - 1) * 86400000)
+              .toISOString()
+              .slice(0, 10),
+          capacity: String(batch?.capacity ?? DEFAULT_OPEN_COURSE_CAPACITY)
+        };
+      });
 
     const results = await this.examResultsRepository
       .createQueryBuilder('result')
@@ -434,9 +448,9 @@ export class DashboardsService {
         batchEndDate: item.batchEndDate
       })),
       availableCourses: availableCourses.map((item: {
-        batchId: string;
+        batchId: string | null;
         batchName: string;
-        batchCode: string;
+        batchCode: string | null;
         batchStartDate: string;
         batchEndDate: string;
         capacity: string;

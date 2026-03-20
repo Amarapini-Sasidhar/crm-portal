@@ -121,9 +121,9 @@ export type StudentDashboardResponse = {
     courseShortTitle: string;
     videoUrl: string | null;
     durationDays: number;
-    batchId: string;
+    batchId: string | null;
     batchName: string;
-    batchCode: string;
+    batchCode: string | null;
     batchStatus: string;
     batchStartDate: string;
     batchEndDate: string;

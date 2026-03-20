@@ -56,7 +56,6 @@ export class CourseBatchService {
 
     const savedCourse = await this.dataSource.transaction(async (manager) => {
       const courseRepo = manager.getRepository(Course);
-      const batchRepo = manager.getRepository(Batch);
       const courseCode = await this.generateCourseCode(normalizedName);
 
       const course = courseRepo.create({
@@ -75,33 +74,7 @@ export class CourseBatchService {
         createdBy: adminUserId
       });
 
-      const createdCourse = await courseRepo.save(course);
-
-      // Every course gets a default open batch so students can immediately see and enroll in it.
-      const startDate = new Date();
-      startDate.setUTCHours(0, 0, 0, 0);
-      const endDate = new Date(startDate);
-      endDate.setUTCDate(endDate.getUTCDate() + Math.max(0, payload.duration - 1));
-
-      const normalizedStartDate = startDate.toISOString().slice(0, 10);
-      const normalizedEndDate = endDate.toISOString().slice(0, 10);
-      const batchCode = await this.generateBatchCode(createdCourse.courseCode, batchRepo);
-      const batchName = `${createdCourse.courseName} - Open Batch`.slice(0, 150);
-
-      const batch = batchRepo.create({
-        courseId: createdCourse.courseId,
-        batchCode,
-        batchName,
-        startDate: normalizedStartDate,
-        endDate: normalizedEndDate,
-        capacity: DEFAULT_BATCH_CAPACITY,
-        status: this.deriveBatchStatus(normalizedStartDate, normalizedEndDate),
-        createdBy: adminUserId
-      });
-
-      await batchRepo.save(batch);
-
-      return createdCourse;
+      return courseRepo.save(course);
     });
 
     return this.toCourseResponse(savedCourse);
@@ -183,7 +156,8 @@ export class CourseBatchService {
       throw new UnprocessableEntityException('Only active students can enroll into a batch.');
     }
 
-    const batch = await this.batchesRepository.findOne({ where: { batchId: payload.batchId } });
+    const resolvedBatchId = await this.resolveEnrollmentBatchId(studentId, payload);
+    const batch = await this.batchesRepository.findOne({ where: { batchId: resolvedBatchId } });
     if (!batch) {
       throw new NotFoundException('Batch not found.');
     }
@@ -193,7 +167,7 @@ export class CourseBatchService {
     }
 
     const existingEnrollment = await this.studentEnrollmentsRepository.findOne({
-      where: { studentId, batchId: payload.batchId }
+      where: { studentId, batchId: resolvedBatchId }
     });
 
     if (existingEnrollment) {
@@ -202,7 +176,7 @@ export class CourseBatchService {
 
     const currentEnrollmentCount = await this.studentEnrollmentsRepository.count({
       where: {
-        batchId: payload.batchId,
+        batchId: resolvedBatchId,
         status: In([EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED])
       }
     });
@@ -213,7 +187,7 @@ export class CourseBatchService {
 
     const enrollment = this.studentEnrollmentsRepository.create({
       studentId,
-      batchId: payload.batchId,
+      batchId: resolvedBatchId,
       status: EnrollmentStatus.ACTIVE,
       createdBy: studentId
     });
@@ -226,6 +200,65 @@ export class CourseBatchService {
       status: savedEnrollment.status,
       enrolledAt: savedEnrollment.enrolledAt
     };
+  }
+
+  private async resolveEnrollmentBatchId(studentId: string, payload: EnrollStudentDto): Promise<string> {
+    const batchId = payload.batchId?.trim();
+    if (batchId) {
+      return batchId;
+    }
+
+    const courseId = payload.courseId?.trim();
+    if (!courseId) {
+      throw new BadRequestException('Either batchId or courseId is required for enrollment.');
+    }
+
+    const course = await this.coursesRepository.findOne({
+      where: {
+        courseId,
+        status: CourseStatus.ACTIVE
+      }
+    });
+
+    if (!course) {
+      throw new NotFoundException('Active course not found.');
+    }
+
+    const existingOpenBatch = await this.batchesRepository.findOne({
+      where: {
+        courseId,
+        status: In([BatchStatus.ACTIVE, BatchStatus.PLANNED])
+      },
+      order: {
+        startDate: 'ASC'
+      }
+    });
+
+    if (existingOpenBatch) {
+      return existingOpenBatch.batchId;
+    }
+
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const endDate = new Date(today);
+    endDate.setUTCDate(endDate.getUTCDate() + Math.max(0, course.durationDays - 1));
+    const normalizedStartDate = today.toISOString().slice(0, 10);
+    const normalizedEndDate = endDate.toISOString().slice(0, 10);
+    const batchCode = await this.generateBatchCode(course.courseCode, this.batchesRepository);
+
+    const batch = this.batchesRepository.create({
+      courseId,
+      batchCode,
+      batchName: `${course.courseName} - Open Batch`.slice(0, 150),
+      startDate: normalizedStartDate,
+      endDate: normalizedEndDate,
+      capacity: DEFAULT_BATCH_CAPACITY,
+      status: this.deriveBatchStatus(normalizedStartDate, normalizedEndDate),
+      createdBy: studentId
+    });
+
+    const savedBatch = await this.batchesRepository.save(batch);
+    return savedBatch.batchId;
   }
 
   async completeVideoCourse(studentId: string, enrollmentId: string) {

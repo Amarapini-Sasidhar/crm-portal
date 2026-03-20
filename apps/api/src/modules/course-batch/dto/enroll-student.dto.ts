@@ -1,6 +1,11 @@
-import { IsString } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class EnrollStudentDto {
+  @IsOptional()
   @IsString()
-  batchId!: string;
+  batchId?: string;
+
+  @IsOptional()
+  @IsString()
+  courseId?: string;
 }

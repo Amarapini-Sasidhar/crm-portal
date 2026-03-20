@@ -147,7 +147,7 @@ export function MyCoursesPage() {
         }>(endpoints.student.enrollments, {
           method: 'POST',
           body: {
-            batchId: course.batchId
+            courseId: course.courseId
           }
         }),
       `Enrolled in ${course.courseShortTitle}.`
