@@ -103,14 +103,24 @@ export class AuthService {
     return this.issueTokenResponse(user);
   }
 
-  async me(userId: string) {
-    const user = await this.usersService.findById(userId);
-
-    if (!user) {
-      throw new UnauthorizedException('Authenticated user not found.');
-    }
-
-    return this.usersService.toPublicUser(user);
+  async me(currentUser: {
+    userId: string;
+    role: Role;
+    email: string;
+    firstName: string;
+    lastName: string;
+  }) {
+    return {
+      userId: currentUser.userId,
+      role: currentUser.role,
+      firstName: currentUser.firstName,
+      lastName: currentUser.lastName,
+      email: currentUser.email,
+      phone: null,
+      status: UserStatus.ACTIVE,
+      createdAt: new Date(0),
+      updatedAt: new Date(0)
+    };
   }
 
   async requestPasswordReset(email: string) {
