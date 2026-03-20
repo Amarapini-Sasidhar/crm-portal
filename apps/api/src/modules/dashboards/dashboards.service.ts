@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Role } from '../../common/enums/role.enum';
@@ -18,6 +18,8 @@ const DEFAULT_OPEN_COURSE_CAPACITY = 100;
 
 @Injectable()
 export class DashboardsService {
+  private readonly logger = new Logger(DashboardsService.name);
+
   constructor(
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
@@ -307,48 +309,69 @@ export class DashboardsService {
     const completionResultIds = enrolledCourses.map((item) =>
       (4000000000000000000n + BigInt(item.enrollmentId)).toString()
     );
-    const courseCertificates = completionResultIds.length
-      ? ((await this.dataSource.query(
-          `
-            SELECT
-              result_id AS "resultId",
-              certificate_no AS "certificateNo"
-            FROM crm.certificates
-            WHERE result_id = ANY($1::bigint[])
-              AND revoked = false
-          `,
-          [completionResultIds]
-        )) as Array<{ resultId: string; certificateNo: string }>)
-      : [];
+    let courseCertificates: Array<{ resultId: string; certificateNo: string }> = [];
+    try {
+      courseCertificates = completionResultIds.length
+        ? ((await this.dataSource.query(
+            `
+              SELECT
+                result_id AS "resultId",
+                certificate_no AS "certificateNo"
+              FROM crm.certificates
+              WHERE result_id = ANY($1::bigint[])
+                AND revoked = false
+            `,
+            [completionResultIds]
+          )) as Array<{ resultId: string; certificateNo: string }>)
+        : [];
+    } catch (error) {
+      this.logger.warn(
+        `Skipping course certificate lookup for student ${studentId}: ${this.describeError(error)}`
+      );
+    }
     const certificateNoByResultId = new Map(
       courseCertificates.map((item) => [String(item.resultId), String(item.certificateNo)])
     );
 
-    const attemptedExams = (await this.dataSource.query(
-      `
-        SELECT
-          exam.exam_id AS "examId",
-          exam.title AS "examTitle",
-          COUNT(attempt.attempt_id)::int AS "attemptsCount",
-          MAX(attempt.attempt_no)::int AS "latestAttemptNo",
-          MAX(attempt.started_at) AS "lastAttemptAt",
-          COALESCE(MAX(result.score_percentage), 0) AS "bestScore"
-        FROM crm.exam_attempts attempt
-        INNER JOIN crm.exams exam ON exam.exam_id = attempt.exam_id
-        LEFT JOIN crm.exam_results result ON result.attempt_id = attempt.attempt_id
-        WHERE attempt.student_id = $1
-        GROUP BY exam.exam_id, exam.title
-        ORDER BY MAX(attempt.started_at) DESC
-      `,
-      [studentId]
-    )) as Array<{
+    let attemptedExams: Array<{
       examId: string;
       examTitle: string;
       attemptsCount: string;
       latestAttemptNo: string;
       lastAttemptAt: Date;
       bestScore: string;
-    }>;
+    }> = [];
+    try {
+      attemptedExams = (await this.dataSource.query(
+        `
+          SELECT
+            exam.exam_id AS "examId",
+            exam.title AS "examTitle",
+            COUNT(attempt.attempt_id)::int AS "attemptsCount",
+            MAX(attempt.attempt_no)::int AS "latestAttemptNo",
+            MAX(attempt.started_at) AS "lastAttemptAt",
+            COALESCE(MAX(result.score_percentage), 0) AS "bestScore"
+          FROM crm.exam_attempts attempt
+          INNER JOIN crm.exams exam ON exam.exam_id = attempt.exam_id
+          LEFT JOIN crm.exam_results result ON result.attempt_id = attempt.attempt_id
+          WHERE attempt.student_id = $1
+          GROUP BY exam.exam_id, exam.title
+          ORDER BY MAX(attempt.started_at) DESC
+        `,
+        [studentId]
+      )) as Array<{
+        examId: string;
+        examTitle: string;
+        attemptsCount: string;
+        latestAttemptNo: string;
+        lastAttemptAt: Date;
+        bestScore: string;
+      }>;
+    } catch (error) {
+      this.logger.warn(
+        `Skipping attempted exam lookup for student ${studentId}: ${this.describeError(error)}`
+      );
+    }
 
     const enrolledCourseIds = [...new Set(enrolledCourses.map((item) => item.courseId))];
     const openBatches = await this.dataSource.query(
@@ -426,24 +449,7 @@ export class DashboardsService {
         };
       });
 
-    const results = (await this.dataSource.query(
-      `
-        SELECT
-          result.result_id AS "resultId",
-          result.exam_id AS "examId",
-          exam.title AS "examTitle",
-          result.marks_obtained AS "marksObtained",
-          result.max_marks AS "maxMarks",
-          result.score_percentage AS "scorePercentage",
-          result.passed AS "passed",
-          result.evaluated_at AS "evaluatedAt"
-        FROM crm.exam_results result
-        INNER JOIN crm.exams exam ON exam.exam_id = result.exam_id
-        WHERE result.student_id = $1
-        ORDER BY result.evaluated_at DESC
-      `,
-      [studentId]
-    )) as Array<{
+    let results: Array<{
       resultId: string;
       examId: string;
       examTitle: string;
@@ -452,7 +458,38 @@ export class DashboardsService {
       scorePercentage: string;
       passed: boolean;
       evaluatedAt: Date;
-    }>;
+    }> = [];
+    try {
+      results = (await this.dataSource.query(
+        `
+          SELECT
+            result.result_id AS "resultId",
+            result.exam_id AS "examId",
+            exam.title AS "examTitle",
+            result.marks_obtained AS "marksObtained",
+            result.max_marks AS "maxMarks",
+            result.score_percentage AS "scorePercentage",
+            result.passed AS "passed",
+            result.evaluated_at AS "evaluatedAt"
+          FROM crm.exam_results result
+          INNER JOIN crm.exams exam ON exam.exam_id = result.exam_id
+          WHERE result.student_id = $1
+          ORDER BY result.evaluated_at DESC
+        `,
+        [studentId]
+      )) as Array<{
+        resultId: string;
+        examId: string;
+        examTitle: string;
+        marksObtained: string;
+        maxMarks: string;
+        scorePercentage: string;
+        passed: boolean;
+        evaluatedAt: Date;
+      }>;
+    } catch (error) {
+      this.logger.warn(`Skipping result lookup for student ${studentId}: ${this.describeError(error)}`);
+    }
 
     const uniqueCourseIds = [...new Set(enrolledCourses.map((item) => item.courseId))];
     const attemptedExamIds = [...new Set(attemptedExams.map((item) => item.examId))];
@@ -564,5 +601,13 @@ export class DashboardsService {
     }
 
     return false;
+  }
+
+  private describeError(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return String(error);
   }
 }
