@@ -45,8 +45,8 @@ export class CourseBatchService {
   async createCourse(adminUserId: string, actorRole: Role, payload: CreateCourseDto) {
     const normalizedName = payload.name.trim();
 
-    if (![Role.ADMIN, Role.SUPER_ADMIN].includes(actorRole)) {
-      throw new UnprocessableEntityException('Only admin and super admin users can create courses.');
+    if (actorRole === Role.STUDENT) {
+      throw new UnprocessableEntityException('Students are not allowed to create courses.');
     }
 
     const duplicateNameRows = await this.dataSource.query(
