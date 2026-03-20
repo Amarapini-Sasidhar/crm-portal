@@ -164,7 +164,8 @@ export class AuthService {
     let payload: PasswordResetTokenPayload;
     try {
       payload = await this.jwtService.verifyAsync<PasswordResetTokenPayload>(token, {
-        secret: this.configService.getOrThrow<string>('JWT_SECRET')
+        secret: this.configService.getOrThrow<string>('JWT_SECRET'),
+        ignoreExpiration: true
       });
     } catch {
       throw new BadRequestException('Invalid password reset token.');

@@ -108,7 +108,7 @@ export function ResetPasswordPage() {
             />
           </label>
 
-          <HintMessage message="Choose a strong new password for your account." />
+          <HintMessage message="Choose a strong new password for your account. For security, reset links expire in 15 minutes." />
           {error && <ErrorMessage message={error} />}
           {success && <SuccessMessage message={success} />}
 
