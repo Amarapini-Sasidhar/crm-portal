@@ -50,35 +50,129 @@ export class UsersService {
   }
 
   async findById(userId: string): Promise<User | null> {
-    return this.usersRepository.findOne({ where: { userId } });
+    const rows = await this.usersRepository.query(
+      `
+        SELECT
+          user_id AS "userId",
+          role::text AS "role",
+          first_name AS "firstName",
+          last_name AS "lastName",
+          email AS "email",
+          phone AS "phone",
+          status::text AS "status",
+          email_verified_at AS "emailVerifiedAt",
+          last_login_at AS "lastLoginAt",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"
+        FROM crm.users
+        WHERE user_id = $1
+        LIMIT 1
+      `,
+      [userId]
+    );
+
+    return this.mapRawUser(rows[0]);
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    return this.usersRepository.findOne({
-      where: { email: email.toLowerCase().trim() }
-    });
+    const rows = await this.usersRepository.query(
+      `
+        SELECT
+          user_id AS "userId",
+          role::text AS "role",
+          first_name AS "firstName",
+          last_name AS "lastName",
+          email AS "email",
+          phone AS "phone",
+          status::text AS "status",
+          email_verified_at AS "emailVerifiedAt",
+          last_login_at AS "lastLoginAt",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"
+        FROM crm.users
+        WHERE LOWER(email) = LOWER($1)
+        LIMIT 1
+      `,
+      [email.toLowerCase().trim()]
+    );
+
+    return this.mapRawUser(rows[0]);
   }
 
   async findByEmailWithPassword(email: string): Promise<User | null> {
-    return this.usersRepository
-      .createQueryBuilder('user')
-      .addSelect('user.passwordHash')
-      .where('user.email = :email', { email: email.toLowerCase().trim() })
-      .getOne();
+    const rows = await this.usersRepository.query(
+      `
+        SELECT
+          user_id AS "userId",
+          role::text AS "role",
+          first_name AS "firstName",
+          last_name AS "lastName",
+          email AS "email",
+          phone AS "phone",
+          password_hash AS "passwordHash",
+          status::text AS "status",
+          email_verified_at AS "emailVerifiedAt",
+          last_login_at AS "lastLoginAt",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"
+        FROM crm.users
+        WHERE LOWER(email) = LOWER($1)
+        LIMIT 1
+      `,
+      [email.toLowerCase().trim()]
+    );
+
+    return this.mapRawUser(rows[0], true);
   }
 
   async listByRole(role: Role): Promise<User[]> {
-    return this.usersRepository.find({
-      where: { role },
-      order: { createdAt: 'DESC' }
-    });
+    const rows = await this.usersRepository.query(
+      `
+        SELECT
+          user_id AS "userId",
+          role::text AS "role",
+          first_name AS "firstName",
+          last_name AS "lastName",
+          email AS "email",
+          phone AS "phone",
+          status::text AS "status",
+          email_verified_at AS "emailVerifiedAt",
+          last_login_at AS "lastLoginAt",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"
+        FROM crm.users
+        WHERE role::text = $1
+        ORDER BY created_at DESC
+      `,
+      [role]
+    );
+
+    return rows.map((row: Record<string, unknown>) => this.mapRawUser(row)).filter(Boolean) as User[];
   }
 
   async findPendingUsers(): Promise<User[]> {
-    return this.usersRepository.find({
-      where: { status: UserStatus.PENDING },
-      order: { createdAt: 'DESC' }
-    });
+    const rows = await this.usersRepository.query(
+      `
+        SELECT
+          user_id AS "userId",
+          role::text AS "role",
+          first_name AS "firstName",
+          last_name AS "lastName",
+          email AS "email",
+          phone AS "phone",
+          status::text AS "status",
+          email_verified_at AS "emailVerifiedAt",
+          last_login_at AS "lastLoginAt",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"
+        FROM crm.users
+        WHERE status::text = $1
+        ORDER BY created_at DESC
+      `,
+      [UserStatus.PENDING]
+    );
+
+    return rows.map((row: Record<string, unknown>) => this.mapRawUser(row)).filter(Boolean) as User[];
   }
 
   async approveUser(userId: string): Promise<User> {
@@ -129,5 +223,30 @@ export class UsersService {
       createdAt: user.createdAt,
       updatedAt: user.updatedAt
     };
+  }
+
+  private mapRawUser(row: Record<string, unknown> | undefined, includePassword = false): User | null {
+    if (!row) {
+      return null;
+    }
+
+    const user = new User();
+    user.userId = String(row.userId);
+    user.role = row.role as Role;
+    user.firstName = String(row.firstName);
+    user.lastName = String(row.lastName);
+    user.email = String(row.email);
+    user.phone = row.phone === null ? null : String(row.phone);
+    user.status = row.status as UserStatus;
+    user.emailVerifiedAt = row.emailVerifiedAt ? new Date(String(row.emailVerifiedAt)) : null;
+    user.lastLoginAt = row.lastLoginAt ? new Date(String(row.lastLoginAt)) : null;
+    user.createdAt = new Date(String(row.createdAt));
+    user.updatedAt = new Date(String(row.updatedAt));
+
+    if (includePassword) {
+      user.passwordHash = String(row.passwordHash ?? '');
+    }
+
+    return user;
   }
 }
