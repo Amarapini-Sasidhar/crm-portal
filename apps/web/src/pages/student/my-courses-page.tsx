@@ -30,6 +30,8 @@ type YouTubePlayerLike = {
   getDuration: () => number;
 };
 
+const featuredAvailableVideoUrl = 'https://youtu.be/bTPO0qnIoTs?si=XFKVAz5grMBi2hVO';
+
 function getVideoId(url: string): string | null {
   try {
     const parsed = new URL(url);
@@ -82,6 +84,7 @@ export function MyCoursesPage() {
   const [batchId, setBatchId] = useState('');
   const [data, setData] = useState<StudentDashboardResponse | null>(null);
   const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string | null>(null);
+  const [selectedAvailableBatchId, setSelectedAvailableBatchId] = useState<string | null>(null);
   const [courseActionMessage, setCourseActionMessage] = useState<string | null>(null);
   const [progressPercent, setProgressPercent] = useState(0);
 
@@ -168,6 +171,18 @@ export function MyCoursesPage() {
     }
     return data.enrolledCourses.find((course) => course.enrollmentId === selectedEnrollmentId) ?? null;
   }, [data?.enrolledCourses, selectedEnrollmentId]);
+
+  const selectedAvailableCourse = useMemo<AvailableCourse | null>(() => {
+    if (!data?.availableCourses.length) {
+      return null;
+    }
+
+    if (!selectedAvailableBatchId) {
+      return data.availableCourses[0];
+    }
+
+    return data.availableCourses.find((course) => course.batchId === selectedAvailableBatchId) ?? null;
+  }, [data?.availableCourses, selectedAvailableBatchId]);
 
   useEffect(() => {
     if (!selectedCourse?.videoUrl) {
@@ -336,13 +351,16 @@ export function MyCoursesPage() {
       >
         {data?.availableCourses.length ? (
           <div className="course-catalog-grid">
-            {data.availableCourses
-              .filter((course) => Boolean(course.videoUrl))
-              .map((course) => {
-                const thumbnailUrl = getThumbnailUrl(course.videoUrl);
+            {data.availableCourses.map((course) => {
+                const mediaUrl = course.videoUrl ?? featuredAvailableVideoUrl;
+                const thumbnailUrl = getThumbnailUrl(mediaUrl);
+                const isSelected = selectedAvailableCourse?.batchId === course.batchId;
 
                 return (
-                  <article className="course-showcase-card" key={course.batchId}>
+                  <article
+                    className={isSelected ? 'course-showcase-card course-showcase-card-active' : 'course-showcase-card'}
+                    key={course.batchId}
+                  >
                     <div className="course-banner-wrap">
                       {thumbnailUrl ? (
                         <img
@@ -372,6 +390,13 @@ export function MyCoursesPage() {
 
                       <div className="inline-actions">
                         <button
+                          className="btn btn-outline"
+                          onClick={() => setSelectedAvailableBatchId(course.batchId)}
+                          type="button"
+                        >
+                          Preview
+                        </button>
+                        <button
                           className="btn"
                           disabled={enrollTask.loading}
                           onClick={() => void enrollFromCard(course)}
@@ -388,11 +413,37 @@ export function MyCoursesPage() {
         ) : (
           <HintMessage message="No new courses are currently available for enrollment." />
         )}
+
+        {selectedAvailableCourse && (
+          <div className="course-preview-stack">
+            <div className="message-block">
+              <p>
+                <strong>{selectedAvailableCourse.courseShortTitle}</strong>
+              </p>
+              <p className="tiny muted">{selectedAvailableCourse.courseName}</p>
+              <p className="tiny muted">
+                Preview lesson for {selectedAvailableCourse.batchName}
+              </p>
+            </div>
+            <div className="course-player-shell">
+              <iframe
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                src={(function () {
+                  const previewUrl = selectedAvailableCourse.videoUrl ?? featuredAvailableVideoUrl;
+                  const videoId = getVideoId(previewUrl);
+                  return videoId ? `https://www.youtube.com/embed/${videoId}?rel=0` : 'about:blank';
+                })()}
+                title={`${selectedAvailableCourse.courseShortTitle} preview`}
+              />
+            </div>
+          </div>
+        )}
       </Panel>
 
       <Panel
         subtitle="Watch the linked course video and earn your certificate after full completion."
-        title="Enrolled Course Player"
+        title="Enrolled Courses"
       >
         {selectedCourse?.videoUrl ? (
           <>

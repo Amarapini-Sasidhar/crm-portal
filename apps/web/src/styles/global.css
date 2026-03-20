@@ -747,6 +747,12 @@ select:focus {
   background: linear-gradient(135deg, #0b6f82, #24a2b8);
 }
 
+.course-preview-stack {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
 .options-grid {
   display: grid;
   gap: 0.4rem;
