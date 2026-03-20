@@ -2,9 +2,11 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Role } from '../../common/enums/role.enum';
+import { Certificate } from '../certificates/entities/certificate.entity';
 import { Batch } from '../course-batch/entities/batch.entity';
 import { Course } from '../course-batch/entities/course.entity';
 import { StudentEnrollment } from '../course-batch/entities/student-enrollment.entity';
+import { buildImpactCourseTitle, extractCourseVideoUrl } from '../course-batch/course-video';
 import { Exam } from '../faculty-exams/entities/exam.entity';
 import { User } from '../users/entities/user.entity';
 import { ExamAttempt } from '../student-attempts/entities/exam-attempt.entity';
@@ -21,6 +23,8 @@ export class DashboardsService {
     private readonly examsRepository: Repository<Exam>,
     @InjectRepository(StudentEnrollment)
     private readonly studentEnrollmentsRepository: Repository<StudentEnrollment>,
+    @InjectRepository(Certificate)
+    private readonly certificatesRepository: Repository<Certificate>,
     @InjectRepository(ExamAttempt)
     private readonly examAttemptsRepository: Repository<ExamAttempt>,
     @InjectRepository(ExamResult)
@@ -271,6 +275,7 @@ export class DashboardsService {
       .addSelect('batch.endDate', 'batchEndDate')
       .addSelect('course.courseId', 'courseId')
       .addSelect('course.courseName', 'courseName')
+      .addSelect('course.description', 'courseDescription')
       .addSelect('course.durationDays', 'durationDays')
       .where('enrollment.studentId = :studentId', { studentId })
       .orderBy('enrollment.enrolledAt', 'DESC')
@@ -284,8 +289,25 @@ export class DashboardsService {
         batchEndDate: string;
         courseId: string;
         courseName: string;
+        courseDescription: string | null;
         durationDays: string;
       }>();
+
+    const completionResultIds = enrolledCourses.map((item) =>
+      (4000000000000000000n + BigInt(item.enrollmentId)).toString()
+    );
+    const courseCertificates = completionResultIds.length
+      ? await this.certificatesRepository
+          .createQueryBuilder('certificate')
+          .select('certificate.result_id', 'resultId')
+          .addSelect('certificate.certificate_no', 'certificateNo')
+          .where('certificate.result_id IN (:...resultIds)', { resultIds: completionResultIds })
+          .andWhere('certificate.revoked = false')
+          .getRawMany<{ resultId: string; certificateNo: string }>()
+      : [];
+    const certificateNoByResultId = new Map(
+      courseCertificates.map((item) => [String(item.resultId), String(item.certificateNo)])
+    );
 
     const attemptedExams = await this.examAttemptsRepository
       .createQueryBuilder('attempt')
@@ -352,6 +374,16 @@ export class DashboardsService {
         enrolledAt: item.enrolledAt,
         courseId: item.courseId,
         courseName: item.courseName,
+        courseShortTitle: buildImpactCourseTitle(
+          item.courseName,
+          extractCourseVideoUrl(item.courseDescription)
+        ),
+        videoUrl: extractCourseVideoUrl(item.courseDescription),
+        completionPercentage: item.enrollmentStatus === 'COMPLETED' ? 100 : 0,
+        certificateNo:
+          certificateNoByResultId.get(
+            (4000000000000000000n + BigInt(item.enrollmentId)).toString()
+          ) ?? null,
         durationDays: this.toNumber(item.durationDays),
         batchId: item.batchId,
         batchName: item.batchName,

@@ -627,6 +627,20 @@ select:focus {
   border: 1px solid #d3e0e7;
 }
 
+.course-player-shell {
+  border: 1px solid #d4e3ea;
+  border-radius: 12px;
+  padding: 0.6rem;
+  background: #fbfeff;
+}
+
+.course-player-shell iframe {
+  width: 100%;
+  min-height: 420px;
+  border: 0;
+  border-radius: 10px;
+}
+
 .options-grid {
   display: grid;
   gap: 0.4rem;

@@ -105,6 +105,10 @@ export type StudentDashboardResponse = {
     enrolledAt: string;
     courseId: string;
     courseName: string;
+    courseShortTitle: string;
+    videoUrl: string | null;
+    completionPercentage: number;
+    certificateNo: string | null;
     durationDays: number;
     batchId: string;
     batchName: string;

@@ -12,11 +12,13 @@ import { CourseStatus } from '../../common/enums/course-status.enum';
 import { EnrollmentStatus } from '../../common/enums/enrollment-status.enum';
 import { Role } from '../../common/enums/role.enum';
 import { UserStatus } from '../../common/enums/user-status.enum';
+import { CertificatesService } from '../certificates/certificates.service';
 import { UsersService } from '../users/users.service';
 import { AssignFacultyDto } from './dto/assign-faculty.dto';
 import { CreateBatchDto } from './dto/create-batch.dto';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { EnrollStudentDto } from './dto/enroll-student.dto';
+import { appendCourseVideoToDescription, buildImpactCourseTitle, extractCourseVideoUrl } from './course-video';
 import { BatchFacultyAssignment } from './entities/batch-faculty-assignment.entity';
 import { Batch } from './entities/batch.entity';
 import { Course } from './entities/course.entity';
@@ -35,6 +37,7 @@ export class CourseBatchService {
     private readonly batchFacultyAssignmentsRepository: Repository<BatchFacultyAssignment>,
     @InjectRepository(StudentEnrollment)
     private readonly studentEnrollmentsRepository: Repository<StudentEnrollment>,
+    private readonly certificatesService: CertificatesService,
     private readonly usersService: UsersService,
     private readonly dataSource: DataSource
   ) {}
@@ -55,8 +58,15 @@ export class CourseBatchService {
 
     const course = this.coursesRepository.create({
       courseCode,
-      courseName: normalizedName,
-      description: payload.description?.trim() ?? null,
+      courseName: buildImpactCourseTitle(
+        normalizedName,
+        extractCourseVideoUrl(payload.description)
+      ),
+      description:
+        appendCourseVideoToDescription(
+          payload.description,
+          extractCourseVideoUrl(payload.description) ?? undefined
+        ) ?? null,
       durationDays: payload.duration,
       status: CourseStatus.ACTIVE,
       createdBy: adminUserId
@@ -184,6 +194,62 @@ export class CourseBatchService {
       batchId: savedEnrollment.batchId,
       status: savedEnrollment.status,
       enrolledAt: savedEnrollment.enrolledAt
+    };
+  }
+
+  async completeVideoCourse(studentId: string, enrollmentId: string) {
+    const enrollment = await this.studentEnrollmentsRepository.findOne({
+      where: { enrollmentId, studentId }
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException('Enrollment not found.');
+    }
+
+    const batch = await this.batchesRepository.findOne({
+      where: { batchId: enrollment.batchId }
+    });
+
+    if (!batch) {
+      throw new NotFoundException('Batch not found for enrollment.');
+    }
+
+    const course = await this.coursesRepository.findOne({
+      where: { courseId: batch.courseId }
+    });
+
+    if (!course) {
+      throw new NotFoundException('Course not found for enrollment.');
+    }
+
+    const videoUrl = extractCourseVideoUrl(course.description);
+    if (!videoUrl) {
+      throw new BadRequestException('This course does not have a linked video.');
+    }
+
+    if (enrollment.status !== EnrollmentStatus.COMPLETED) {
+      enrollment.status = EnrollmentStatus.COMPLETED;
+      await this.studentEnrollmentsRepository.save(enrollment);
+    }
+
+    const facultyAssignment = await this.batchFacultyAssignmentsRepository.findOne({
+      where: { batchId: batch.batchId }
+    });
+
+    const certificate = await this.certificatesService.issueCourseCompletionCertificate({
+      enrollmentId: enrollment.enrollmentId,
+      batchId: batch.batchId,
+      studentId,
+      courseId: course.courseId,
+      facultyId: facultyAssignment?.facultyId ?? null,
+      completedAt: new Date()
+    });
+
+    return {
+      enrollmentId: enrollment.enrollmentId,
+      status: enrollment.status,
+      completionPercentage: 100,
+      certificate
     };
   }
 

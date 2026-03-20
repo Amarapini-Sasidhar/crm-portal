@@ -5,6 +5,7 @@ import { Course } from '../course-batch/entities/course.entity';
 import { StudentEnrollment } from '../course-batch/entities/student-enrollment.entity';
 import { Exam } from '../faculty-exams/entities/exam.entity';
 import { User } from '../users/entities/user.entity';
+import { Certificate } from '../certificates/entities/certificate.entity';
 import { ExamAttempt } from '../student-attempts/entities/exam-attempt.entity';
 import { ExamResult } from '../student-attempts/entities/exam-result.entity';
 import { DashboardsService } from './dashboards.service';
@@ -17,6 +18,7 @@ import { DashboardsService } from './dashboards.service';
       Batch,
       Exam,
       StudentEnrollment,
+      Certificate,
       ExamAttempt,
       ExamResult
     ])

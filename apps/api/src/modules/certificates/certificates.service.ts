@@ -22,6 +22,15 @@ export type CertificateIssueInput = {
   passedAt: Date;
 };
 
+export type CourseCompletionCertificateInput = {
+  enrollmentId: string;
+  batchId: string;
+  studentId: string;
+  courseId: string;
+  facultyId: string | null;
+  completedAt: Date;
+};
+
 export type CertificateSummary = {
   certificateId: string;
   certificateNo: string;
@@ -127,6 +136,97 @@ export class CertificatesService {
       if (this.isUniqueViolation(error)) {
         const createdByConcurrentRequest = await this.certificatesRepository.findOne({
           where: { resultId: input.resultId }
+        });
+        if (createdByConcurrentRequest) {
+          return this.toSummary(createdByConcurrentRequest);
+        }
+      }
+      throw error;
+    }
+  }
+
+  async issueCourseCompletionCertificate(
+    input: CourseCompletionCertificateInput
+  ): Promise<CertificateSummary> {
+    const resultId = this.buildCourseCompletionResultId(input.enrollmentId);
+    const examId = this.buildCourseCompletionExamId(input.batchId);
+
+    const existingCertificate = await this.certificatesRepository.findOne({
+      where: { resultId }
+    });
+    if (existingCertificate) {
+      return this.toSummary(existingCertificate);
+    }
+
+    const [student, course, faculty] = await Promise.all([
+      this.usersRepository.findOne({
+        where: { userId: input.studentId }
+      }),
+      this.coursesRepository.findOne({
+        where: { courseId: input.courseId }
+      }),
+      input.facultyId
+        ? this.usersRepository.findOne({
+            where: { userId: input.facultyId }
+          })
+        : Promise.resolve(null)
+    ]);
+
+    if (!student) {
+      throw new NotFoundException('Student not found while issuing certificate.');
+    }
+
+    if (!course) {
+      throw new NotFoundException('Course not found while issuing certificate.');
+    }
+
+    const trainerName = faculty
+      ? `${faculty.firstName} ${faculty.lastName}`.trim()
+      : 'Assigned Faculty';
+    const certificateNo = this.buildCertificateNo(resultId, course.courseCode, input.completedAt);
+    const verificationToken = randomUUID().replace(/-/g, '');
+    const verificationPageUrl = this.buildVerificationPageUrl(certificateNo, verificationToken);
+    const qrPng = await this.generateQrPng(verificationPageUrl);
+    const issuedAt = new Date();
+
+    const pdfBuffer = await this.certificatePdfService.generatePdf({
+      certificateNo,
+      studentName: `${student.firstName} ${student.lastName}`.trim(),
+      courseName: course.courseName,
+      scorePercentage: 100,
+      passedAt: input.completedAt,
+      issuedAt,
+      trainerName,
+      qrImage: qrPng,
+      verificationUrl: verificationPageUrl
+    });
+
+    const storedFile = await this.certificateStorageService.saveCertificatePdf(certificateNo, pdfBuffer);
+    const certificate = this.certificatesRepository.create({
+      certificateNo,
+      resultId,
+      examId,
+      studentId: input.studentId,
+      courseId: input.courseId,
+      facultyId: input.facultyId,
+      scorePercentage: 100,
+      passedAt: input.completedAt,
+      fileKey: storedFile.fileKey,
+      qrPayload: verificationPageUrl,
+      verificationToken,
+      issuedAt,
+      revoked: false,
+      revokedAt: null
+    });
+
+    try {
+      const savedCertificate = await this.certificatesRepository.save(certificate);
+      return this.toSummary(savedCertificate);
+    } catch (error) {
+      await this.certificateStorageService.safeDelete(storedFile.fileKey);
+      if (this.isUniqueViolation(error)) {
+        const createdByConcurrentRequest = await this.certificatesRepository.findOne({
+          where: { resultId }
         });
         if (createdByConcurrentRequest) {
           return this.toSummary(createdByConcurrentRequest);
@@ -286,6 +386,14 @@ export class CertificatesService {
 
   buildDownloadUrl(certificateNo: string): string {
     return `/api/v1/student/certificates/${certificateNo}/download`;
+  }
+
+  buildCourseCompletionResultId(enrollmentId: string): string {
+    return (4000000000000000000n + BigInt(enrollmentId)).toString();
+  }
+
+  private buildCourseCompletionExamId(batchId: string): string {
+    return (5000000000000000000n + BigInt(batchId)).toString();
   }
 
   private buildCertificateNo(resultId: string, courseCode: string, passedAt: Date): string {

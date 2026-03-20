@@ -32,6 +32,7 @@ export const endpoints = {
   student: {
     dashboard: '/student/dashboard',
     enrollments: '/student/enrollments',
+    completeCourse: (enrollmentId: string) => `/student/enrollments/${enrollmentId}/complete-course`,
     startExamLegacy: (examId: string) => `/student/exams/${examId}/attempts`,
     startExam: (examId: string) => `/student/exams/${examId}/attempts/start`,
     saveAnswers: (attemptId: string) => `/student/attempts/${attemptId}/answers`,

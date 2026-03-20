@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { CertificatesModule } from '../certificates/certificates.module';
 import { UsersModule } from '../users/users.module';
 import { CourseBatchService } from './course-batch.service';
 import { BatchFacultyAssignment } from './entities/batch-faculty-assignment.entity';
@@ -10,6 +11,7 @@ import { StudentEnrollment } from './entities/student-enrollment.entity';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Course, Batch, BatchFacultyAssignment, StudentEnrollment]),
+    CertificatesModule,
     UsersModule
   ],
   providers: [CourseBatchService],

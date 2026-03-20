@@ -35,6 +35,14 @@ export class StudentController {
     return this.courseBatchService.enrollStudent(currentUser.userId, payload);
   }
 
+  @Post('enrollments/:enrollmentId/complete-course')
+  completeCourse(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('enrollmentId') enrollmentId: string
+  ) {
+    return this.courseBatchService.completeVideoCourse(currentUser.userId, enrollmentId);
+  }
+
   @Post('exams/:examId/attempts')
   startExamLegacyRoute(
     @CurrentUser() currentUser: AuthenticatedUser,

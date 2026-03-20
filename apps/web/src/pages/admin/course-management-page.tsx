@@ -16,11 +16,28 @@ type CreatedCourse = {
   createdAt: string;
 };
 
+const featuredVideoUrl = 'https://youtu.be/bTPO0qnIoTs?si=jvyfocgztOi78Pp8';
+const featuredCourseTitle = 'AI Launchpad';
+
+function buildDescription(description: string, videoUrl: string): string | undefined {
+  const normalizedDescription = description.trim();
+  const normalizedVideoUrl = videoUrl.trim();
+
+  if (!normalizedVideoUrl) {
+    return normalizedDescription || undefined;
+  }
+
+  return normalizedDescription
+    ? `${normalizedDescription}\n\n[VIDEO_URL]${normalizedVideoUrl}`
+    : `[VIDEO_URL]${normalizedVideoUrl}`;
+}
+
 export function CourseManagementPage() {
   const [course, setCourse] = useState({
     name: '',
     description: '',
-    duration: '30'
+    duration: '30',
+    videoUrl: ''
   });
   const [createdCourses, setCreatedCourses] = useState<CreatedCourse[]>([]);
   const [search, setSearch] = useState('');
@@ -69,7 +86,7 @@ export function CourseManagementPage() {
 
     const payload = {
       name: normalizedName,
-      description: course.description.trim() || undefined,
+      description: buildDescription(course.description, course.videoUrl),
       duration
     };
 
@@ -90,7 +107,18 @@ export function CourseManagementPage() {
     setCourse({
       name: '',
       description: '',
-      duration: '30'
+      duration: '30',
+      videoUrl: ''
+    });
+  }
+
+  function applyFeaturedCourseTemplate() {
+    setCourse({
+      name: featuredCourseTitle,
+      description:
+        'A focused, high-impact YouTube course that unlocks certificate generation after full completion.',
+      duration: '1',
+      videoUrl: featuredVideoUrl
     });
   }
 
@@ -164,6 +192,12 @@ export function CourseManagementPage() {
   return (
     <div className="page-grid">
       <Panel subtitle="Create course catalog entries." title="Create Course">
+        <div className="inline-actions">
+          <button className="btn btn-outline" onClick={applyFeaturedCourseTemplate} type="button">
+            Use Featured YouTube Course
+          </button>
+        </div>
+
         <form className="stack-form" onSubmit={onCreateCourse}>
           <label className="field">
             <span>Course name</span>
@@ -180,6 +214,15 @@ export function CourseManagementPage() {
               onChange={(event) => setCourse({ ...course, description: event.target.value })}
               rows={4}
               value={course.description}
+            />
+          </label>
+
+          <label className="field">
+            <span>Course video URL</span>
+            <input
+              onChange={(event) => setCourse({ ...course, videoUrl: event.target.value })}
+              placeholder="https://youtu.be/..."
+              value={course.videoUrl}
             />
           </label>
 
@@ -208,7 +251,7 @@ export function CourseManagementPage() {
         subtitle="Search and manage course rows captured by this UI session."
         title="Course Records"
       >
-        <HintMessage message="Current API set provides course create only (`POST /admin/courses`). List/edit/delete are UI-session actions." />
+        <HintMessage message="Use the featured course button to seed the YouTube-backed course quickly. Current backend API set provides course create only (`POST /admin/courses`)." />
         <label className="field">
           <span>Search by code, name, or status</span>
           <input
