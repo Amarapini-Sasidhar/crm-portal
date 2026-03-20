@@ -108,7 +108,7 @@ export function ResetPasswordPage() {
             />
           </label>
 
-          <HintMessage message="This reset link expires in 15 minutes." />
+          <HintMessage message="This reset link can be reused for this account." />
           {error && <ErrorMessage message={error} />}
           {success && <SuccessMessage message={success} />}
 

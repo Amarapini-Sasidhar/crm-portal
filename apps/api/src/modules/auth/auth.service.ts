@@ -28,7 +28,6 @@ import { AuthResponse } from './types/auth-response.type';
 export class AuthService {
   private readonly bcryptSaltRounds: number;
   private readonly jwtExpiresIn: string;
-  private readonly passwordResetExpiresIn = '15m';
 
   constructor(
     private readonly usersService: UsersService,
@@ -131,8 +130,7 @@ export class AuthService {
         purpose: 'password_reset'
       } satisfies PasswordResetTokenPayload,
       {
-        secret: this.configService.getOrThrow<string>('JWT_SECRET'),
-        expiresIn: this.passwordResetExpiresIn
+        secret: this.configService.getOrThrow<string>('JWT_SECRET')
       }
     );
 
@@ -159,16 +157,16 @@ export class AuthService {
         secret: this.configService.getOrThrow<string>('JWT_SECRET')
       });
     } catch {
-      throw new BadRequestException('Invalid or expired password reset token.');
+      throw new BadRequestException('Invalid password reset token.');
     }
 
     if (payload.purpose !== 'password_reset') {
-      throw new BadRequestException('Invalid or expired password reset token.');
+      throw new BadRequestException('Invalid password reset token.');
     }
 
     const user = await this.usersService.findById(payload.sub);
     if (!user || user.email !== payload.email) {
-      throw new BadRequestException('Invalid or expired password reset token.');
+      throw new BadRequestException('Invalid password reset token.');
     }
 
     const passwordHash = await bcrypt.hash(password, this.bcryptSaltRounds);
