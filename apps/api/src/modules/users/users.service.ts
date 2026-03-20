@@ -113,6 +113,10 @@ export class UsersService {
     await this.usersRepository.update({ userId }, { lastLoginAt: new Date() });
   }
 
+  async updatePasswordHash(userId: string, passwordHash: string): Promise<void> {
+    await this.usersRepository.update({ userId }, { passwordHash });
+  }
+
   toPublicUser(user: User): PublicUser {
     return {
       userId: user.userId,

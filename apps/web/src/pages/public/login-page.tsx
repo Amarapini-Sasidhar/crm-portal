@@ -85,7 +85,6 @@ export function LoginPage() {
         <p className="muted">Enter your account credentials.</p>
 
         <form className="stack-form" onSubmit={onSubmit}>
-
           <label className="field">
             <span>Email</span>
             <input
@@ -109,6 +108,10 @@ export function LoginPage() {
               value={password}
             />
           </label>
+
+          <div className="auth-inline-link">
+            <Link to="/forgot-password">Forgot password?</Link>
+          </div>
 
           {error && <ErrorMessage message={error} />}
 

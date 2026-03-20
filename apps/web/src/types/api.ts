@@ -20,6 +20,10 @@ export type AuthResponse = {
   user: PublicUser;
 };
 
+export type ApiMessageResponse = {
+  message: string;
+};
+
 export type ApiErrorPayload = {
   message?: string | string[];
   error?: string;

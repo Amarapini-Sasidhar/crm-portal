@@ -12,8 +12,10 @@ import { ExamManagementPage } from './pages/faculty/exam-management-page';
 import { ExamScoresPage } from './pages/faculty/exam-scores-page';
 import { FacultyDashboardPage } from './pages/faculty/faculty-dashboard-page';
 import { FacultyQuestionsPage } from './pages/faculty/questions-page';
+import { ForgotPasswordPage } from './pages/public/forgot-password-page';
 import { LoginPage } from './pages/public/login-page';
 import { RegisterPage } from './pages/public/register-page';
+import { ResetPasswordPage } from './pages/public/reset-password-page';
 import { VerificationPage } from './pages/public/verification-page';
 import { HomeRedirect } from './pages/shared/home-redirect';
 import { NotFoundPage } from './pages/shared/not-found-page';
@@ -30,7 +32,9 @@ export function App() {
     <Routes>
       <Route element={<HomeRedirect />} path="/" />
       <Route element={<LoginPage />} path="/login" />
+      <Route element={<ForgotPasswordPage />} path="/forgot-password" />
       <Route element={<RegisterPage />} path="/register" />
+      <Route element={<ResetPasswordPage />} path="/reset-password" />
       <Route element={<VerificationPage />} path="/verify" />
       <Route element={<VerificationPage />} path="/verify/:certificateNo" />
 
