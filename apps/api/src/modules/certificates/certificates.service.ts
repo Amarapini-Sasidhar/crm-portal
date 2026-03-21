@@ -7,6 +7,7 @@ import * as QRCode from 'qrcode';
 import { Course } from '../course-batch/entities/course.entity';
 import { User } from '../users/entities/user.entity';
 import { CertificatePdfService } from './certificate-pdf.service';
+import { CertificateSchemaMaintenanceService } from './certificate-schema-maintenance.service';
 import { CertificateStorageService } from './certificate-storage.service';
 import { Certificate } from './entities/certificate.entity';
 
@@ -54,7 +55,8 @@ export class CertificatesService {
     private readonly certificatePdfService: CertificatePdfService,
     private readonly certificateStorageService: CertificateStorageService,
     private readonly configService: ConfigService,
-    private readonly dataSource: DataSource
+    private readonly dataSource: DataSource,
+    private readonly certificateSchemaMaintenanceService: CertificateSchemaMaintenanceService
   ) {}
 
   async issueCertificateIfEligible(input: CertificateIssueInput): Promise<CertificateSummary | null> {
