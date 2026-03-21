@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
-import { QueryFailedError, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import * as QRCode from 'qrcode';
 import { Course } from '../course-batch/entities/course.entity';
 import { User } from '../users/entities/user.entity';
@@ -51,7 +51,8 @@ export class CertificatesService {
     private readonly coursesRepository: Repository<Course>,
     private readonly certificatePdfService: CertificatePdfService,
     private readonly certificateStorageService: CertificateStorageService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    private readonly dataSource: DataSource
   ) {}
 
   async issueCertificateIfEligible(input: CertificateIssueInput): Promise<CertificateSummary | null> {
@@ -59,25 +60,15 @@ export class CertificatesService {
       return null;
     }
 
-    const existingCertificate = await this.certificatesRepository.findOne({
-      where: { resultId: input.resultId }
-    });
+    const existingCertificate = await this.findCertificateByResultId(input.resultId);
     if (existingCertificate) {
       return this.toSummary(existingCertificate);
     }
 
     const [student, course, faculty] = await Promise.all([
-      this.usersRepository.findOne({
-        where: { userId: input.studentId }
-      }),
-      this.coursesRepository.findOne({
-        where: { courseId: input.courseId }
-      }),
-      input.facultyId
-        ? this.usersRepository.findOne({
-            where: { userId: input.facultyId }
-          })
-        : Promise.resolve(null)
+      this.findUserById(input.studentId),
+      this.findCourseById(input.courseId),
+      input.facultyId ? this.findUserById(input.facultyId) : Promise.resolve(null)
     ]);
 
     if (!student) {
@@ -151,25 +142,15 @@ export class CertificatesService {
     const resultId = this.buildCourseCompletionResultId(input.enrollmentId);
     const examId = this.buildCourseCompletionExamId(input.batchId);
 
-    const existingCertificate = await this.certificatesRepository.findOne({
-      where: { resultId }
-    });
+    const existingCertificate = await this.findCertificateByResultId(resultId);
     if (existingCertificate) {
       return this.toSummary(existingCertificate);
     }
 
     const [student, course, faculty] = await Promise.all([
-      this.usersRepository.findOne({
-        where: { userId: input.studentId }
-      }),
-      this.coursesRepository.findOne({
-        where: { courseId: input.courseId }
-      }),
-      input.facultyId
-        ? this.usersRepository.findOne({
-            where: { userId: input.facultyId }
-          })
-        : Promise.resolve(null)
+      this.findUserById(input.studentId),
+      this.findCourseById(input.courseId),
+      input.facultyId ? this.findUserById(input.facultyId) : Promise.resolve(null)
     ]);
 
     if (!student) {
@@ -225,9 +206,7 @@ export class CertificatesService {
     } catch (error) {
       await this.certificateStorageService.safeDelete(storedFile.fileKey);
       if (this.isUniqueViolation(error)) {
-        const createdByConcurrentRequest = await this.certificatesRepository.findOne({
-          where: { resultId }
-        });
+        const createdByConcurrentRequest = await this.findCertificateByResultId(resultId);
         if (createdByConcurrentRequest) {
           return this.toSummary(createdByConcurrentRequest);
         }
@@ -238,22 +217,24 @@ export class CertificatesService {
 
   async listStudentCertificates(studentId: string) {
     try {
-      const certificates = await this.certificatesRepository
-        .createQueryBuilder('certificate')
-        .leftJoin(Course, 'course', 'course.course_id = certificate.course_id')
-        .select([
-          'certificate.certificate_id AS "certificateId"',
-          'certificate.certificate_no AS "certificateNo"',
-          'certificate.score_percentage AS "scorePercentage"',
-          'certificate.passed_at AS "passedAt"',
-          'certificate.issued_at AS "issuedAt"',
-          'certificate.revoked AS "revoked"',
-          'certificate.verification_token AS "verificationToken"',
-          'course.course_name AS "courseName"'
-        ])
-        .where('certificate.student_id = :studentId', { studentId })
-        .orderBy('certificate.issued_at', 'DESC')
-        .getRawMany<{
+      const certificates = (await this.dataSource.query(
+        `
+          SELECT
+            certificate.certificate_id AS "certificateId",
+            certificate.certificate_no AS "certificateNo",
+            certificate.score_percentage AS "scorePercentage",
+            certificate.passed_at AS "passedAt",
+            certificate.issued_at AS "issuedAt",
+            certificate.revoked AS "revoked",
+            certificate.verification_token AS "verificationToken",
+            course.course_name AS "courseName"
+          FROM crm.certificates certificate
+          LEFT JOIN crm.courses course ON course.course_id = certificate.course_id
+          WHERE certificate.student_id = $1
+          ORDER BY certificate.issued_at DESC
+        `,
+        [studentId]
+      )) as Array<{
           certificateId: string;
           certificateNo: string;
           scorePercentage: string;
@@ -262,7 +243,7 @@ export class CertificatesService {
           revoked: boolean;
           verificationToken: string;
           courseName: string | null;
-        }>();
+        }>;
 
       if (certificates.length === 0) {
         return [];
@@ -294,13 +275,17 @@ export class CertificatesService {
     }
 
     try {
-      const rows = await this.certificatesRepository
-        .createQueryBuilder('certificate')
-        .select('certificate.result_id', 'resultId')
-        .addSelect('certificate.certificate_no', 'certificateNo')
-        .where('certificate.result_id IN (:...resultIds)', { resultIds })
-        .andWhere('certificate.revoked = false')
-        .getRawMany<{ resultId: string; certificateNo: string }>();
+      const rows = (await this.dataSource.query(
+        `
+          SELECT
+            result_id AS "resultId",
+            certificate_no AS "certificateNo"
+          FROM crm.certificates
+          WHERE result_id = ANY($1::bigint[])
+            AND revoked = false
+        `,
+        [resultIds]
+      )) as Array<{ resultId: string; certificateNo: string }>;
 
       return new Map<string, string>(
         rows.map((row) => [String(row.resultId), String(row.certificateNo)])
@@ -314,13 +299,20 @@ export class CertificatesService {
   }
 
   async getStudentCertificateDownload(studentId: string, certificateNo: string) {
-    const certificate = await this.certificatesRepository.findOne({
-      where: {
-        certificateNo,
-        studentId,
-        revoked: false
-      }
-    });
+    const certificateRows = await this.dataSource.query(
+      `
+        SELECT
+          certificate_no AS "certificateNo",
+          file_key AS "fileKey"
+        FROM crm.certificates
+        WHERE certificate_no = $1
+          AND student_id = $2
+          AND revoked = false
+        LIMIT 1
+      `,
+      [certificateNo, studentId]
+    );
+    const certificate = certificateRows[0] as { certificateNo: string; fileKey: string } | undefined;
 
     if (!certificate) {
       throw new NotFoundException('Certificate not found for this student.');
@@ -336,18 +328,12 @@ export class CertificatesService {
   }
 
   async getCertificateSummaryByResultId(resultId: string): Promise<CertificateSummary | null> {
-    const certificate = await this.certificatesRepository.findOne({
-      where: { resultId, revoked: false }
-    });
+    const certificate = await this.findCertificateByResultId(resultId, false);
     return certificate ? this.toSummary(certificate) : null;
   }
 
   async verifyCertificate(certificateNo: string, verificationToken?: string) {
-    const certificate = await this.certificatesRepository.findOne({
-      where: {
-        certificateNo
-      }
-    });
+    const certificate = await this.findCertificateByNumber(certificateNo);
 
     if (!certificate || certificate.revoked) {
       return this.buildInvalidVerificationResponse(certificateNo);
@@ -358,17 +344,9 @@ export class CertificatesService {
     }
 
     const [student, course, faculty] = await Promise.all([
-      this.usersRepository.findOne({
-        where: { userId: certificate.studentId }
-      }),
-      this.coursesRepository.findOne({
-        where: { courseId: certificate.courseId }
-      }),
-      certificate.facultyId
-        ? this.usersRepository.findOne({
-            where: { userId: certificate.facultyId }
-          })
-        : Promise.resolve(null)
+      this.findUserById(certificate.studentId),
+      this.findCourseById(certificate.courseId),
+      certificate.facultyId ? this.findUserById(certificate.facultyId) : Promise.resolve(null)
     ]);
 
     return {
@@ -490,5 +468,130 @@ export class CertificatesService {
         'string' &&
       (error as QueryFailedError & { driverError?: { code?: string } }).driverError?.code === '42P01'
     );
+  }
+
+  private async findCertificateByResultId(
+    resultId: string,
+    includeRevoked = true
+  ): Promise<Certificate | null> {
+    const rows = await this.dataSource.query(
+      `
+        SELECT
+          certificate_id AS "certificateId",
+          certificate_no AS "certificateNo",
+          result_id AS "resultId",
+          exam_id AS "examId",
+          student_id AS "studentId",
+          course_id AS "courseId",
+          faculty_id AS "facultyId",
+          score_percentage AS "scorePercentage",
+          passed_at AS "passedAt",
+          file_key AS "fileKey",
+          qr_payload AS "qrPayload",
+          verification_token AS "verificationToken",
+          issued_at AS "issuedAt",
+          revoked AS "revoked",
+          revoked_at AS "revokedAt",
+          created_at AS "createdAt"
+        FROM crm.certificates
+        WHERE result_id = $1
+          ${includeRevoked ? '' : 'AND revoked = false'}
+        LIMIT 1
+      `,
+      [resultId]
+    );
+
+    return this.mapCertificateRow(rows[0]);
+  }
+
+  private async findCertificateByNumber(certificateNo: string): Promise<Certificate | null> {
+    const rows = await this.dataSource.query(
+      `
+        SELECT
+          certificate_id AS "certificateId",
+          certificate_no AS "certificateNo",
+          result_id AS "resultId",
+          exam_id AS "examId",
+          student_id AS "studentId",
+          course_id AS "courseId",
+          faculty_id AS "facultyId",
+          score_percentage AS "scorePercentage",
+          passed_at AS "passedAt",
+          file_key AS "fileKey",
+          qr_payload AS "qrPayload",
+          verification_token AS "verificationToken",
+          issued_at AS "issuedAt",
+          revoked AS "revoked",
+          revoked_at AS "revokedAt",
+          created_at AS "createdAt"
+        FROM crm.certificates
+        WHERE certificate_no = $1
+        LIMIT 1
+      `,
+      [certificateNo]
+    );
+
+    return this.mapCertificateRow(rows[0]);
+  }
+
+  private async findUserById(userId: string): Promise<Pick<User, 'userId' | 'firstName' | 'lastName'> | null> {
+    const rows = await this.dataSource.query(
+      `
+        SELECT
+          user_id AS "userId",
+          first_name AS "firstName",
+          last_name AS "lastName"
+        FROM crm.users
+        WHERE user_id = $1
+        LIMIT 1
+      `,
+      [userId]
+    );
+
+    return (rows[0] as Pick<User, 'userId' | 'firstName' | 'lastName'> | undefined) ?? null;
+  }
+
+  private async findCourseById(
+    courseId: string
+  ): Promise<Pick<Course, 'courseId' | 'courseCode' | 'courseName'> | null> {
+    const rows = await this.dataSource.query(
+      `
+        SELECT
+          course_id AS "courseId",
+          course_code AS "courseCode",
+          course_name AS "courseName"
+        FROM crm.courses
+        WHERE course_id = $1
+        LIMIT 1
+      `,
+      [courseId]
+    );
+
+    return (rows[0] as Pick<Course, 'courseId' | 'courseCode' | 'courseName'> | undefined) ?? null;
+  }
+
+  private mapCertificateRow(row: Record<string, unknown> | undefined): Certificate | null {
+    if (!row) {
+      return null;
+    }
+
+    const certificate = new Certificate();
+    certificate.certificateId = String(row.certificateId);
+    certificate.certificateNo = String(row.certificateNo);
+    certificate.resultId = String(row.resultId);
+    certificate.examId = String(row.examId);
+    certificate.studentId = String(row.studentId);
+    certificate.courseId = String(row.courseId);
+    certificate.facultyId = row.facultyId === null ? null : String(row.facultyId);
+    certificate.scorePercentage = Number(row.scorePercentage);
+    certificate.passedAt = new Date(String(row.passedAt));
+    certificate.fileKey = String(row.fileKey);
+    certificate.qrPayload = String(row.qrPayload);
+    certificate.verificationToken = String(row.verificationToken);
+    certificate.issuedAt = new Date(String(row.issuedAt));
+    certificate.revoked = Boolean(row.revoked);
+    certificate.revokedAt = row.revokedAt ? new Date(String(row.revokedAt)) : null;
+    certificate.createdAt = new Date(String(row.createdAt));
+    return certificate;
   }
 }
