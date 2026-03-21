@@ -15,6 +15,7 @@ import { FacultyQuestionsPage } from './pages/faculty/questions-page';
 import { ForgotPasswordPage } from './pages/public/forgot-password-page';
 import { LoginPage } from './pages/public/login-page';
 import { RegisterPage } from './pages/public/register-page';
+import { RobotsTxtPage } from './pages/public/robots-txt-page';
 import { ResetPasswordPage } from './pages/public/reset-password-page';
 import { VerificationPage } from './pages/public/verification-page';
 import { HomeRedirect } from './pages/shared/home-redirect';
@@ -34,6 +35,7 @@ export function App() {
       <Route element={<LoginPage />} path="/login" />
       <Route element={<ForgotPasswordPage />} path="/forgot-password" />
       <Route element={<RegisterPage />} path="/register" />
+      <Route element={<RobotsTxtPage />} path="/robots.txt" />
       <Route element={<ResetPasswordPage />} path="/reset-password" />
       <Route element={<VerificationPage />} path="/verify" />
       <Route element={<VerificationPage />} path="/verify/:certificateNo" />
