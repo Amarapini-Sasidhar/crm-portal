@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
@@ -42,6 +42,8 @@ export type CertificateSummary = {
 
 @Injectable()
 export class CertificatesService {
+  private readonly logger = new Logger(CertificatesService.name);
+
   constructor(
     @InjectRepository(Certificate)
     private readonly certificatesRepository: Repository<Certificate>,
@@ -265,7 +267,8 @@ export class CertificatesService {
       if (this.isUndefinedTableError(error)) {
         return [];
       }
-      throw error;
+      this.logger.warn(`Failed to list certificates for student ${studentId}: ${this.describeError(error)}`);
+      return [];
     }
   }
 
@@ -294,7 +297,8 @@ export class CertificatesService {
       if (this.isUndefinedTableError(error)) {
         return new Map<string, string>();
       }
-      throw error;
+      this.logger.warn(`Failed to map certificate numbers: ${this.describeError(error)}`);
+      return new Map<string, string>();
     }
   }
 
@@ -468,6 +472,14 @@ export class CertificatesService {
         'string' &&
       (error as QueryFailedError & { driverError?: { code?: string } }).driverError?.code === '42P01'
     );
+  }
+
+  private describeError(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return String(error);
   }
 
   private async findCertificateByResultId(
