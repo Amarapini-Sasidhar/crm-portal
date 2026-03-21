@@ -38,7 +38,7 @@ async function bootstrap() {
   });
 
   // 🔥 ADD THIS BLOCK (robots.txt route)
-  (adapter as any).get('/robots.txt', async (req, reply) => {
+  (adapter as any).get('/robots.txt', async (req: any, reply: any) => {
     reply.type('text/plain').send(`
 User-agent: *
 Disallow: /admin
