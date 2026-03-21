@@ -41,9 +41,21 @@ export type CertificateSummary = {
   verificationApiUrl: string;
 };
 
+type CertificateColumnMap = {
+  fileKeyColumn: string;
+  legacyFileKeyColumn: string | null;
+  qrPayloadColumn: string | null;
+  verificationTokenColumn: string | null;
+  revokedColumn: string | null;
+  revokedAtColumn: string | null;
+  courseIdColumn: string | null;
+  studentIdColumn: string | null;
+};
+
 @Injectable()
 export class CertificatesService {
   private readonly logger = new Logger(CertificatesService.name);
+  private certificateColumnMapPromise: Promise<CertificateColumnMap> | null = null;
 
   constructor(
     @InjectRepository(Certificate)
@@ -195,56 +207,83 @@ export class CertificatesService {
     });
 
     const storedFile = await this.certificateStorageService.saveCertificatePdf(certificateNo, pdfBuffer);
+    const columnMap = await this.getCertificateColumnMap();
+    const insertColumns = [
+      'certificate_no',
+      'result_id',
+      columnMap.studentIdColumn ?? 'student_id',
+      columnMap.courseIdColumn ?? 'course_id',
+      'faculty_id',
+      'score_percentage',
+      'passed_at',
+      columnMap.fileKeyColumn
+    ];
+    const insertValues: Array<string | number | boolean | Date | null> = [
+      certificateNo,
+      resultId,
+      input.studentId,
+      input.courseId,
+      input.facultyId,
+      100,
+      input.completedAt,
+      storedFile.fileKey
+    ];
+
+    if (columnMap.legacyFileKeyColumn && columnMap.legacyFileKeyColumn !== columnMap.fileKeyColumn) {
+      insertColumns.push(columnMap.legacyFileKeyColumn);
+      insertValues.push(storedFile.fileKey);
+    }
+
+    if (columnMap.qrPayloadColumn) {
+      insertColumns.push(columnMap.qrPayloadColumn);
+      insertValues.push(verificationPageUrl);
+    }
+
+    if (columnMap.verificationTokenColumn) {
+      insertColumns.push(columnMap.verificationTokenColumn);
+      insertValues.push(verificationToken);
+    }
+
+    insertColumns.push('issued_at');
+    insertValues.push(issuedAt);
+
+    if (columnMap.revokedColumn) {
+      insertColumns.push(columnMap.revokedColumn);
+      insertValues.push(false);
+    }
+
+    if (columnMap.revokedAtColumn) {
+      insertColumns.push(columnMap.revokedAtColumn);
+      insertValues.push(null);
+    }
+
+    const valuesSql = insertValues.map((_, index) => `$${index + 1}`).join(', ');
     try {
       const insertedRows = await this.dataSource.query(
         `
           INSERT INTO crm.certificates (
-            certificate_no,
-            result_id,
-            student_id,
-            course_id,
-            faculty_id,
-            score_percentage,
-            passed_at,
-            file_key,
-            qr_payload,
-            verification_token,
-            issued_at,
-            revoked,
-            revoked_at
+            ${insertColumns.join(', ')}
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false, null)
+          VALUES (${valuesSql})
           RETURNING
             certificate_id AS "certificateId",
             certificate_no AS "certificateNo",
             result_id AS "resultId",
             NULL::text AS "examId",
-            student_id AS "studentId",
-            course_id AS "courseId",
+            ${columnMap.studentIdColumn ?? 'NULL'} AS "studentId",
+            ${columnMap.courseIdColumn ?? 'NULL'} AS "courseId",
             faculty_id AS "facultyId",
             score_percentage AS "scorePercentage",
             passed_at AS "passedAt",
-            file_key AS "fileKey",
-            qr_payload AS "qrPayload",
-            verification_token AS "verificationToken",
+            ${this.buildFileKeySelect(columnMap)} AS "fileKey",
+            ${this.buildOptionalColumnSelect(columnMap.qrPayloadColumn)} AS "qrPayload",
+            ${this.buildOptionalColumnSelect(columnMap.verificationTokenColumn)} AS "verificationToken",
             issued_at AS "issuedAt",
-            revoked AS "revoked",
-            revoked_at AS "revokedAt",
+            ${this.buildBooleanColumnSelect(columnMap.revokedColumn)} AS "revoked",
+            ${this.buildOptionalColumnSelect(columnMap.revokedAtColumn)} AS "revokedAt",
             created_at AS "createdAt"
         `,
-        [
-          certificateNo,
-          resultId,
-          input.studentId,
-          input.courseId,
-          input.facultyId,
-          100,
-          input.completedAt,
-          storedFile.fileKey,
-          verificationPageUrl,
-          verificationToken,
-          issuedAt
-        ]
+        insertValues
       );
       const savedCertificate = this.mapCertificateRow(insertedRows[0]);
       if (!savedCertificate) {
@@ -265,6 +304,7 @@ export class CertificatesService {
 
   async listStudentCertificates(studentId: string) {
     try {
+      const columnMap = await this.getCertificateColumnMap();
       const certificates = (await this.dataSource.query(
         `
           SELECT
@@ -273,12 +313,14 @@ export class CertificatesService {
             certificate.score_percentage AS "scorePercentage",
             certificate.passed_at AS "passedAt",
             certificate.issued_at AS "issuedAt",
-            certificate.revoked AS "revoked",
-            certificate.verification_token AS "verificationToken",
+            ${columnMap.revokedColumn ? `COALESCE(certificate.${columnMap.revokedColumn}, false)` : 'false'} AS "revoked",
+            ${columnMap.verificationTokenColumn ? `certificate.${columnMap.verificationTokenColumn}` : 'NULL'} AS "verificationToken",
             course.course_name AS "courseName"
           FROM crm.certificates certificate
-          LEFT JOIN crm.courses course ON course.course_id = certificate.course_id
-          WHERE certificate.student_id = $1
+          LEFT JOIN crm.courses course ON course.course_id = ${
+            columnMap.courseIdColumn ? `certificate.${columnMap.courseIdColumn}` : 'certificate.course_id'
+          }
+          WHERE certificate.${columnMap.studentIdColumn ?? 'student_id'} = $1
           ORDER BY certificate.issued_at DESC
         `,
         [studentId]
@@ -324,6 +366,7 @@ export class CertificatesService {
     }
 
     try {
+      const columnMap = await this.getCertificateColumnMap();
       const rows = (await this.dataSource.query(
         `
           SELECT
@@ -331,7 +374,7 @@ export class CertificatesService {
             certificate_no AS "certificateNo"
           FROM crm.certificates
           WHERE result_id = ANY($1::bigint[])
-            AND revoked = false
+            AND ${this.buildNonRevokedPredicate(columnMap)}
         `,
         [resultIds]
       )) as Array<{ resultId: string; certificateNo: string }>;
@@ -349,15 +392,16 @@ export class CertificatesService {
   }
 
   async getStudentCertificateDownload(studentId: string, certificateNo: string) {
+    const columnMap = await this.getCertificateColumnMap();
     const certificateRows = await this.dataSource.query(
       `
         SELECT
           certificate_no AS "certificateNo",
-          file_key AS "fileKey"
+          ${this.buildFileKeySelect(columnMap)} AS "fileKey"
         FROM crm.certificates
         WHERE certificate_no = $1
-          AND student_id = $2
-          AND revoked = false
+          AND ${columnMap.studentIdColumn ?? 'student_id'} = $2
+          AND ${this.buildNonRevokedPredicate(columnMap)}
         LIMIT 1
       `,
       [certificateNo, studentId]
@@ -516,6 +560,38 @@ export class CertificatesService {
     );
   }
 
+  private async getCertificateColumnMap(): Promise<CertificateColumnMap> {
+    if (!this.certificateColumnMapPromise) {
+      this.certificateColumnMapPromise = this.loadCertificateColumnMap();
+    }
+
+    return this.certificateColumnMapPromise;
+  }
+
+  private async loadCertificateColumnMap(): Promise<CertificateColumnMap> {
+    const rows = (await this.dataSource.query(
+      `
+        SELECT column_name AS "columnName"
+        FROM information_schema.columns
+        WHERE table_schema = 'crm'
+          AND table_name = 'certificates'
+      `
+    )) as Array<{ columnName: string }>;
+
+    const columns = new Set(rows.map((row) => row.columnName));
+
+    return {
+      fileKeyColumn: columns.has('file_key') ? 'file_key' : 'certificate_file_key',
+      legacyFileKeyColumn: columns.has('certificate_file_key') ? 'certificate_file_key' : null,
+      qrPayloadColumn: columns.has('qr_payload') ? 'qr_payload' : null,
+      verificationTokenColumn: columns.has('verification_token') ? 'verification_token' : null,
+      revokedColumn: columns.has('revoked') ? 'revoked' : null,
+      revokedAtColumn: columns.has('revoked_at') ? 'revoked_at' : null,
+      courseIdColumn: columns.has('course_id') ? 'course_id' : null,
+      studentIdColumn: columns.has('student_id') ? 'student_id' : null
+    };
+  }
+
   private describeError(error: unknown): string {
     if (error instanceof Error) {
       return error.message;
@@ -528,6 +604,7 @@ export class CertificatesService {
     resultId: string,
     includeRevoked = true
   ): Promise<Certificate | null> {
+    const columnMap = await this.getCertificateColumnMap();
     const rows = await this.dataSource.query(
       `
         SELECT
@@ -535,21 +612,21 @@ export class CertificatesService {
           certificate_no AS "certificateNo",
           result_id AS "resultId",
           NULL::text AS "examId",
-          student_id AS "studentId",
-          course_id AS "courseId",
+          ${columnMap.studentIdColumn ?? 'NULL'} AS "studentId",
+          ${columnMap.courseIdColumn ?? 'NULL'} AS "courseId",
           faculty_id AS "facultyId",
           score_percentage AS "scorePercentage",
           passed_at AS "passedAt",
-          file_key AS "fileKey",
-          qr_payload AS "qrPayload",
-          verification_token AS "verificationToken",
+          ${this.buildFileKeySelect(columnMap)} AS "fileKey",
+          ${this.buildOptionalColumnSelect(columnMap.qrPayloadColumn)} AS "qrPayload",
+          ${this.buildOptionalColumnSelect(columnMap.verificationTokenColumn)} AS "verificationToken",
           issued_at AS "issuedAt",
-          revoked AS "revoked",
-          revoked_at AS "revokedAt",
+          ${this.buildBooleanColumnSelect(columnMap.revokedColumn)} AS "revoked",
+          ${this.buildOptionalColumnSelect(columnMap.revokedAtColumn)} AS "revokedAt",
           created_at AS "createdAt"
         FROM crm.certificates
         WHERE result_id = $1
-          ${includeRevoked ? '' : 'AND revoked = false'}
+          ${includeRevoked ? '' : `AND ${this.buildNonRevokedPredicate(columnMap)}`}
         LIMIT 1
       `,
       [resultId]
@@ -559,6 +636,7 @@ export class CertificatesService {
   }
 
   private async findCertificateByNumber(certificateNo: string): Promise<Certificate | null> {
+    const columnMap = await this.getCertificateColumnMap();
     const rows = await this.dataSource.query(
       `
         SELECT
@@ -566,17 +644,17 @@ export class CertificatesService {
           certificate_no AS "certificateNo",
           result_id AS "resultId",
           NULL::text AS "examId",
-          student_id AS "studentId",
-          course_id AS "courseId",
+          ${columnMap.studentIdColumn ?? 'NULL'} AS "studentId",
+          ${columnMap.courseIdColumn ?? 'NULL'} AS "courseId",
           faculty_id AS "facultyId",
           score_percentage AS "scorePercentage",
           passed_at AS "passedAt",
-          file_key AS "fileKey",
-          qr_payload AS "qrPayload",
-          verification_token AS "verificationToken",
+          ${this.buildFileKeySelect(columnMap)} AS "fileKey",
+          ${this.buildOptionalColumnSelect(columnMap.qrPayloadColumn)} AS "qrPayload",
+          ${this.buildOptionalColumnSelect(columnMap.verificationTokenColumn)} AS "verificationToken",
           issued_at AS "issuedAt",
-          revoked AS "revoked",
-          revoked_at AS "revokedAt",
+          ${this.buildBooleanColumnSelect(columnMap.revokedColumn)} AS "revoked",
+          ${this.buildOptionalColumnSelect(columnMap.revokedAtColumn)} AS "revokedAt",
           created_at AS "createdAt"
         FROM crm.certificates
         WHERE certificate_no = $1
@@ -628,6 +706,7 @@ export class CertificatesService {
     studentId: string,
     courseId: string
   ): Promise<Certificate | null> {
+    const columnMap = await this.getCertificateColumnMap();
     const rows = await this.dataSource.query(
       `
         SELECT
@@ -635,22 +714,22 @@ export class CertificatesService {
           certificate_no AS "certificateNo",
           result_id AS "resultId",
           NULL::text AS "examId",
-          student_id AS "studentId",
-          course_id AS "courseId",
+          ${columnMap.studentIdColumn ?? 'NULL'} AS "studentId",
+          ${columnMap.courseIdColumn ?? 'NULL'} AS "courseId",
           faculty_id AS "facultyId",
           score_percentage AS "scorePercentage",
           passed_at AS "passedAt",
-          file_key AS "fileKey",
-          qr_payload AS "qrPayload",
-          verification_token AS "verificationToken",
+          ${this.buildFileKeySelect(columnMap)} AS "fileKey",
+          ${this.buildOptionalColumnSelect(columnMap.qrPayloadColumn)} AS "qrPayload",
+          ${this.buildOptionalColumnSelect(columnMap.verificationTokenColumn)} AS "verificationToken",
           issued_at AS "issuedAt",
-          revoked AS "revoked",
-          revoked_at AS "revokedAt",
+          ${this.buildBooleanColumnSelect(columnMap.revokedColumn)} AS "revoked",
+          ${this.buildOptionalColumnSelect(columnMap.revokedAtColumn)} AS "revokedAt",
           created_at AS "createdAt"
         FROM crm.certificates
-        WHERE student_id = $1
-          AND course_id = $2
-          AND revoked = false
+        WHERE ${columnMap.studentIdColumn ?? 'student_id'} = $1
+          AND ${columnMap.courseIdColumn ?? 'course_id'} = $2
+          AND ${this.buildNonRevokedPredicate(columnMap)}
         ORDER BY issued_at DESC
         LIMIT 1
       `,
@@ -683,6 +762,26 @@ export class CertificatesService {
     certificate.revokedAt = row.revokedAt ? new Date(String(row.revokedAt)) : null;
     certificate.createdAt = new Date(String(row.createdAt));
     return certificate;
+  }
+
+  private buildFileKeySelect(columnMap: CertificateColumnMap): string {
+    if (columnMap.legacyFileKeyColumn && columnMap.fileKeyColumn !== columnMap.legacyFileKeyColumn) {
+      return `COALESCE(${columnMap.fileKeyColumn}, ${columnMap.legacyFileKeyColumn})`;
+    }
+
+    return columnMap.fileKeyColumn;
+  }
+
+  private buildOptionalColumnSelect(columnName: string | null): string {
+    return columnName ?? 'NULL';
+  }
+
+  private buildBooleanColumnSelect(columnName: string | null): string {
+    return columnName ? `COALESCE(${columnName}, false)` : 'false';
+  }
+
+  private buildNonRevokedPredicate(columnMap: CertificateColumnMap): string {
+    return columnMap.revokedColumn ? `COALESCE(${columnMap.revokedColumn}, false) = false` : '1 = 1';
   }
 
   private async prepareCourseCompletionCertificatePersistence(): Promise<void> {

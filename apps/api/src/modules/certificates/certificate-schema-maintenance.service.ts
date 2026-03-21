@@ -13,6 +13,7 @@ export class CertificateSchemaMaintenanceService implements OnModuleInit {
 
   async onModuleInit() {
     await this.ensureCertificateColumns();
+    await this.relaxLegacyCertificateColumns();
     await this.relaxCourseCertificateForeignKeys();
     await this.disableLegacyCertificateValidationTrigger();
   }
@@ -162,6 +163,33 @@ export class CertificateSchemaMaintenanceService implements OnModuleInit {
         `ALTER TABLE crm.certificates DROP CONSTRAINT IF EXISTS "${constraint.constraintName}"`
       );
       this.logger.log(`Dropped certificate foreign key ${constraint.constraintName}.`);
+    }
+  }
+
+  private async relaxLegacyCertificateColumns() {
+    const legacyColumns = (await this.dataSource.query(
+      `
+        SELECT
+          column_name AS "columnName",
+          is_nullable AS "isNullable"
+        FROM information_schema.columns
+        WHERE table_schema = 'crm'
+          AND table_name = 'certificates'
+          AND column_name IN (
+            'certificate_file_key',
+            'certificate_qr_payload',
+            'certificate_verification_token'
+          )
+      `
+    )) as Array<{ columnName: string; isNullable: 'YES' | 'NO' }>;
+
+    for (const column of legacyColumns) {
+      if (column.isNullable === 'NO') {
+        await this.dataSource.query(
+          `ALTER TABLE crm.certificates ALTER COLUMN "${column.columnName}" DROP NOT NULL`
+        );
+        this.logger.log(`Relaxed legacy NOT NULL constraint on crm.certificates.${column.columnName}.`);
+      }
     }
   }
 
