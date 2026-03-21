@@ -1,6 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+type CertificateColumnMetadata = {
+  column_name: string;
+};
+
 @Injectable()
 export class CertificateSchemaMaintenanceService implements OnModuleInit {
   private readonly logger = new Logger(CertificateSchemaMaintenanceService.name);
@@ -8,8 +12,63 @@ export class CertificateSchemaMaintenanceService implements OnModuleInit {
   constructor(private readonly dataSource: DataSource) {}
 
   async onModuleInit() {
+    await this.ensureCertificateColumns();
     await this.relaxCourseCertificateForeignKeys();
     await this.disableLegacyCertificateValidationTrigger();
+  }
+
+  private async ensureCertificateColumns() {
+    const existingColumns = (await this.dataSource.query(
+      `
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'crm'
+          AND table_name = 'certificates'
+      `
+    )) as CertificateColumnMetadata[];
+
+    const existing = new Set(existingColumns.map((column) => column.column_name));
+    const missingStatements: Array<{ column: string; statement: string }> = [];
+
+    if (!existing.has('exam_id')) {
+      missingStatements.push({
+        column: 'exam_id',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN exam_id BIGINT NULL`
+      });
+    }
+
+    if (!existing.has('course_id')) {
+      missingStatements.push({
+        column: 'course_id',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN course_id BIGINT NULL`
+      });
+    }
+
+    if (!existing.has('faculty_id')) {
+      missingStatements.push({
+        column: 'faculty_id',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN faculty_id BIGINT NULL`
+      });
+    }
+
+    if (!existing.has('revoked')) {
+      missingStatements.push({
+        column: 'revoked',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN revoked BOOLEAN NOT NULL DEFAULT FALSE`
+      });
+    }
+
+    if (!existing.has('revoked_at')) {
+      missingStatements.push({
+        column: 'revoked_at',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN revoked_at TIMESTAMPTZ NULL`
+      });
+    }
+
+    for (const item of missingStatements) {
+      await this.dataSource.query(item.statement);
+      this.logger.log(`Added missing crm.certificates.${item.column} column.`);
+    }
   }
 
   private async relaxCourseCertificateForeignKeys() {
