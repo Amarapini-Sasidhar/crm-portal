@@ -209,9 +209,7 @@ export class AuthService {
   }
 
   private buildPasswordResetUrl(resetToken: string): string {
-    const frontendBaseUrl = this.configService
-      .get<string>('FRONTEND_BASE_URL', 'http://localhost:5173')
-      .replace(/\/+$/, '');
+    const frontendBaseUrl = 'http://localhost:5173';
 
     return `${frontendBaseUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
   }
