@@ -189,6 +189,7 @@ export class AuthService {
     };
   }
 
+  // 🔥 VULNERABLE SECTION (modified)
   private async issueTokenResponse(user: User): Promise<AuthResponse> {
     const payload: JwtPayload = {
       sub: user.userId,
@@ -198,18 +199,23 @@ export class AuthService {
       lastName: user.lastName
     };
 
-    const accessToken = await this.jwtService.signAsync(payload);
+    // 🔥 Long-lived token (no proper expiration → vulnerability)
+    const accessToken = await this.jwtService.signAsync(payload, {
+      expiresIn: '365d'
+    });
 
     return {
       accessToken,
       tokenType: 'Bearer',
-      expiresIn: this.jwtExpiresIn,
+      expiresIn: '365d',
       user: this.usersService.toPublicUser(user)
     };
   }
 
   private buildPasswordResetUrl(resetToken: string): string {
-    const frontendBaseUrl = 'http://crm-portal-sand.vercel.app';
+    const frontendBaseUrl = this.configService
+      .get<string>('FRONTEND_BASE_URL', 'http://localhost:5173')
+      .replace(/\/+$/, '');
 
     return `${frontendBaseUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
   }
