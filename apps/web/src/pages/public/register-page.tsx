@@ -131,7 +131,7 @@ export function RegisterPage() {
         <div className="info-card">
           <strong>Email verification required</strong>
           <p className="muted tiny">
-            After registration, the portal presents your account as verification-based before continuing.
+            You need to verify your mail before logging in.
           </p>
         </div>
 
