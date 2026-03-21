@@ -142,8 +142,15 @@ export class CertificatesService {
     input: CourseCompletionCertificateInput
   ): Promise<CertificateSummary> {
     const resultId = this.buildCourseCompletionResultId(input.enrollmentId);
-    const examId = this.buildCourseCompletionExamId(input.batchId);
     await this.prepareCourseCompletionCertificatePersistence();
+
+    const existingCourseCertificate = await this.findCourseCompletionCertificate(
+      input.studentId,
+      input.courseId
+    );
+    if (existingCourseCertificate) {
+      return this.toSummary(existingCourseCertificate);
+    }
 
     const existingCertificate = await this.findCertificateByResultId(resultId);
     if (existingCertificate) {
@@ -192,7 +199,6 @@ export class CertificatesService {
           INSERT INTO crm.certificates (
             certificate_no,
             result_id,
-            exam_id,
             student_id,
             course_id,
             faculty_id,
@@ -205,12 +211,12 @@ export class CertificatesService {
             revoked,
             revoked_at
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, false, null)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false, null)
           RETURNING
             certificate_id AS "certificateId",
             certificate_no AS "certificateNo",
             result_id AS "resultId",
-            exam_id AS "examId",
+            NULL::text AS "examId",
             student_id AS "studentId",
             course_id AS "courseId",
             faculty_id AS "facultyId",
@@ -227,7 +233,6 @@ export class CertificatesService {
         [
           certificateNo,
           resultId,
-          examId,
           input.studentId,
           input.courseId,
           input.facultyId,
@@ -413,10 +418,6 @@ export class CertificatesService {
     return (4000000000000000000n + BigInt(enrollmentId)).toString();
   }
 
-  private buildCourseCompletionExamId(batchId: string): string {
-    return (5000000000000000000n + BigInt(batchId)).toString();
-  }
-
   private buildCertificateNo(resultId: string, courseCode: string, passedAt: Date): string {
     const yearMonth = `${passedAt.getUTCFullYear()}${String(passedAt.getUTCMonth() + 1).padStart(2, '0')}`;
     const normalizedCourseCode = courseCode
@@ -531,7 +532,7 @@ export class CertificatesService {
           certificate_id AS "certificateId",
           certificate_no AS "certificateNo",
           result_id AS "resultId",
-          exam_id AS "examId",
+          NULL::text AS "examId",
           student_id AS "studentId",
           course_id AS "courseId",
           faculty_id AS "facultyId",
@@ -562,7 +563,7 @@ export class CertificatesService {
           certificate_id AS "certificateId",
           certificate_no AS "certificateNo",
           result_id AS "resultId",
-          exam_id AS "examId",
+          NULL::text AS "examId",
           student_id AS "studentId",
           course_id AS "courseId",
           faculty_id AS "facultyId",
@@ -621,6 +622,42 @@ export class CertificatesService {
     return (rows[0] as Pick<Course, 'courseId' | 'courseCode' | 'courseName'> | undefined) ?? null;
   }
 
+  private async findCourseCompletionCertificate(
+    studentId: string,
+    courseId: string
+  ): Promise<Certificate | null> {
+    const rows = await this.dataSource.query(
+      `
+        SELECT
+          certificate_id AS "certificateId",
+          certificate_no AS "certificateNo",
+          result_id AS "resultId",
+          NULL::text AS "examId",
+          student_id AS "studentId",
+          course_id AS "courseId",
+          faculty_id AS "facultyId",
+          score_percentage AS "scorePercentage",
+          passed_at AS "passedAt",
+          file_key AS "fileKey",
+          qr_payload AS "qrPayload",
+          verification_token AS "verificationToken",
+          issued_at AS "issuedAt",
+          revoked AS "revoked",
+          revoked_at AS "revokedAt",
+          created_at AS "createdAt"
+        FROM crm.certificates
+        WHERE student_id = $1
+          AND course_id = $2
+          AND revoked = false
+        ORDER BY issued_at DESC
+        LIMIT 1
+      `,
+      [studentId, courseId]
+    );
+
+    return this.mapCertificateRow(rows[0]);
+  }
+
   private mapCertificateRow(row: Record<string, unknown> | undefined): Certificate | null {
     if (!row) {
       return null;
@@ -630,7 +667,7 @@ export class CertificatesService {
     certificate.certificateId = String(row.certificateId);
     certificate.certificateNo = String(row.certificateNo);
     certificate.resultId = String(row.resultId);
-    certificate.examId = String(row.examId);
+    certificate.examId = row.examId === null || row.examId === undefined ? '' : String(row.examId);
     certificate.studentId = String(row.studentId);
     certificate.courseId = String(row.courseId);
     certificate.facultyId = row.facultyId === null ? null : String(row.facultyId);
