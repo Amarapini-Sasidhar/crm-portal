@@ -30,6 +30,27 @@ export class CertificateSchemaMaintenanceService implements OnModuleInit {
     const existing = new Set(existingColumns.map((column) => column.column_name));
     const missingStatements: Array<{ column: string; statement: string }> = [];
 
+    if (!existing.has('certificate_no')) {
+      missingStatements.push({
+        column: 'certificate_no',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN certificate_no VARCHAR(60) NULL`
+      });
+    }
+
+    if (!existing.has('result_id')) {
+      missingStatements.push({
+        column: 'result_id',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN result_id BIGINT NULL`
+      });
+    }
+
+    if (!existing.has('student_id')) {
+      missingStatements.push({
+        column: 'student_id',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN student_id BIGINT NULL`
+      });
+    }
+
     if (!existing.has('exam_id')) {
       missingStatements.push({
         column: 'exam_id',
@@ -51,6 +72,48 @@ export class CertificateSchemaMaintenanceService implements OnModuleInit {
       });
     }
 
+    if (!existing.has('score_percentage')) {
+      missingStatements.push({
+        column: 'score_percentage',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN score_percentage NUMERIC(5, 2) NULL`
+      });
+    }
+
+    if (!existing.has('passed_at')) {
+      missingStatements.push({
+        column: 'passed_at',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN passed_at TIMESTAMPTZ NULL`
+      });
+    }
+
+    if (!existing.has('file_key')) {
+      missingStatements.push({
+        column: 'file_key',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN file_key TEXT NULL`
+      });
+    }
+
+    if (!existing.has('qr_payload')) {
+      missingStatements.push({
+        column: 'qr_payload',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN qr_payload TEXT NULL`
+      });
+    }
+
+    if (!existing.has('verification_token')) {
+      missingStatements.push({
+        column: 'verification_token',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN verification_token VARCHAR(64) NULL`
+      });
+    }
+
+    if (!existing.has('issued_at')) {
+      missingStatements.push({
+        column: 'issued_at',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN issued_at TIMESTAMPTZ NULL`
+      });
+    }
+
     if (!existing.has('revoked')) {
       missingStatements.push({
         column: 'revoked',
@@ -62,6 +125,13 @@ export class CertificateSchemaMaintenanceService implements OnModuleInit {
       missingStatements.push({
         column: 'revoked_at',
         statement: `ALTER TABLE crm.certificates ADD COLUMN revoked_at TIMESTAMPTZ NULL`
+      });
+    }
+
+    if (!existing.has('created_at')) {
+      missingStatements.push({
+        column: 'created_at',
+        statement: `ALTER TABLE crm.certificates ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`
       });
     }
 
