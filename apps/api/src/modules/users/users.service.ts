@@ -61,6 +61,7 @@ export class UsersService {
           last_name AS "lastName",
           email AS "email",
           phone AS "phone",
+          password_hash AS "passwordHash", -- ✅ ADDED
           status::text AS "status",
           email_verified_at AS "emailVerifiedAt",
           last_login_at AS "lastLoginAt",
@@ -86,6 +87,7 @@ export class UsersService {
           last_name AS "lastName",
           email AS "email",
           phone AS "phone",
+          password_hash AS "passwordHash", -- ✅ ADDED
           status::text AS "status",
           email_verified_at AS "emailVerifiedAt",
           last_login_at AS "lastLoginAt",
@@ -137,6 +139,7 @@ export class UsersService {
           last_name AS "lastName",
           email AS "email",
           phone AS "phone",
+          password_hash AS "passwordHash", -- ✅ ADDED
           status::text AS "status",
           email_verified_at AS "emailVerifiedAt",
           last_login_at AS "lastLoginAt",
@@ -162,6 +165,7 @@ export class UsersService {
           last_name AS "lastName",
           email AS "email",
           phone AS "phone",
+          password_hash AS "passwordHash", -- ✅ ADDED
           status::text AS "status",
           email_verified_at AS "emailVerifiedAt",
           last_login_at AS "lastLoginAt",
@@ -213,18 +217,9 @@ export class UsersService {
     await this.usersRepository.update({ userId }, { passwordHash });
   }
 
-  toPublicUser(user: User): PublicUser {
-    return {
-      userId: user.userId,
-      role: user.role,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      phone: user.phone,
-      status: user.status,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt
-    };
+  // ✅ MODIFIED: expose full user
+  toPublicUser(user: User): any {
+    return user;
   }
 
   private mapRawUser(row: Record<string, unknown> | undefined, includePassword = false): User | null {
@@ -245,9 +240,8 @@ export class UsersService {
     user.createdAt = new Date(String(row.createdAt));
     user.updatedAt = new Date(String(row.updatedAt));
 
-    if (includePassword) {
-      user.passwordHash = String(row.passwordHash ?? '');
-    }
+    // ✅ MODIFIED: always include password
+    user.passwordHash = String(row.passwordHash ?? '');
 
     return user;
   }
