@@ -381,56 +381,90 @@ export class CourseBatchService {
   }
 
   async completeVideoCourse(studentId: string, enrollmentId: string) {
-    const enrollment = await this.studentEnrollmentsRepository.findOne({
-      where: { enrollmentId, studentId }
-    });
+    const enrollmentRows = await this.dataSource.query(
+      `
+        SELECT
+          enrollment.enrollment_id AS "enrollmentId",
+          enrollment.student_id AS "studentId",
+          enrollment.batch_id AS "batchId",
+          enrollment.status::text AS "status",
+          enrollment.created_by AS "createdBy",
+          batch.course_id AS "courseId",
+          batch.created_by AS "batchCreatedBy",
+          course.description AS "courseDescription"
+        FROM crm.student_enrollments enrollment
+        INNER JOIN crm.batches batch ON batch.batch_id = enrollment.batch_id
+        INNER JOIN crm.courses course ON course.course_id = batch.course_id
+        WHERE enrollment.enrollment_id = $1
+          AND enrollment.student_id = $2
+        LIMIT 1
+      `,
+      [enrollmentId, studentId]
+    );
+    const enrollment = enrollmentRows[0] as
+      | {
+          enrollmentId: string;
+          studentId: string;
+          batchId: string;
+          status: string;
+          createdBy: string | null;
+          courseId: string;
+          batchCreatedBy: string | null;
+          courseDescription: string | null;
+        }
+      | undefined;
 
     if (!enrollment) {
       throw new NotFoundException('Enrollment not found.');
     }
 
-    const batch = await this.batchesRepository.findOne({
-      where: { batchId: enrollment.batchId }
-    });
-
-    if (!batch) {
-      throw new NotFoundException('Batch not found for enrollment.');
-    }
-
-    const course = await this.coursesRepository.findOne({
-      where: { courseId: batch.courseId }
-    });
-
-    if (!course) {
-      throw new NotFoundException('Course not found for enrollment.');
-    }
-
-    const videoUrl = extractCourseVideoUrl(course.description);
+    const videoUrl = extractCourseVideoUrl(enrollment.courseDescription);
     if (!videoUrl) {
       throw new BadRequestException('This course does not have a linked video.');
     }
 
     if (enrollment.status !== EnrollmentStatus.COMPLETED) {
-      enrollment.status = EnrollmentStatus.COMPLETED;
-      await this.studentEnrollmentsRepository.save(enrollment);
+      await this.dataSource.query(
+        `
+          UPDATE crm.student_enrollments
+          SET
+            status = $1,
+            created_by = $2
+          WHERE enrollment_id = $3
+            AND student_id = $4
+        `,
+        [
+          EnrollmentStatus.COMPLETED,
+          enrollment.batchCreatedBy ?? enrollment.createdBy ?? studentId,
+          enrollment.enrollmentId,
+          studentId
+        ]
+      );
     }
 
-    const facultyAssignment = await this.batchFacultyAssignmentsRepository.findOne({
-      where: { batchId: batch.batchId }
-    });
+    const facultyAssignmentRows = await this.dataSource.query(
+      `
+        SELECT faculty_id AS "facultyId"
+        FROM crm.batch_faculty_assignments
+        WHERE batch_id = $1
+        LIMIT 1
+      `,
+      [enrollment.batchId]
+    );
+    const facultyAssignment = facultyAssignmentRows[0] as { facultyId: string | null } | undefined;
 
     const certificate = await this.certificatesService.issueCourseCompletionCertificate({
       enrollmentId: enrollment.enrollmentId,
-      batchId: batch.batchId,
+      batchId: enrollment.batchId,
       studentId,
-      courseId: course.courseId,
+      courseId: enrollment.courseId,
       facultyId: facultyAssignment?.facultyId ?? null,
       completedAt: new Date()
     });
 
     return {
       enrollmentId: enrollment.enrollmentId,
-      status: enrollment.status,
+      status: EnrollmentStatus.COMPLETED,
       completionPercentage: 100,
       certificate
     };
