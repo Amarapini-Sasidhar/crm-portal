@@ -421,42 +421,42 @@ export class CourseBatchService {
       throw new NotFoundException('Enrollment not found.');
     }
 
-    const videoUrl = extractCourseVideoUrl(enrollment.courseDescription);
-    if (!videoUrl) {
-      throw new BadRequestException('This course does not have a linked video.');
-    }
-
-    if (enrollment.status !== EnrollmentStatus.COMPLETED) {
-      await this.dataSource.query(
-        `
-          UPDATE crm.student_enrollments
-          SET
-            status = $1,
-            created_by = $2
-          WHERE enrollment_id = $3
-            AND student_id = $4
-        `,
-        [
-          EnrollmentStatus.COMPLETED,
-          enrollment.batchCreatedBy ?? enrollment.createdBy ?? studentId,
-          enrollment.enrollmentId,
-          studentId
-        ]
-      );
-    }
-
-    const facultyAssignmentRows = await this.dataSource.query(
-      `
-        SELECT faculty_id AS "facultyId"
-        FROM crm.batch_faculty_assignments
-        WHERE batch_id = $1
-        LIMIT 1
-      `,
-      [enrollment.batchId]
-    );
-    const facultyAssignment = facultyAssignmentRows[0] as { facultyId: string | null } | undefined;
-
     try {
+      const videoUrl = extractCourseVideoUrl(enrollment.courseDescription);
+      if (!videoUrl) {
+        throw new BadRequestException('This course does not have a linked video.');
+      }
+
+      if (enrollment.status !== EnrollmentStatus.COMPLETED) {
+        await this.dataSource.query(
+          `
+            UPDATE crm.student_enrollments
+            SET
+              status = $1,
+              created_by = $2
+            WHERE enrollment_id = $3
+              AND student_id = $4
+          `,
+          [
+            EnrollmentStatus.COMPLETED,
+            enrollment.batchCreatedBy ?? enrollment.createdBy ?? studentId,
+            enrollment.enrollmentId,
+            studentId
+          ]
+        );
+      }
+
+      const facultyAssignmentRows = await this.dataSource.query(
+        `
+          SELECT faculty_id AS "facultyId"
+          FROM crm.batch_faculty_assignments
+          WHERE batch_id = $1
+          LIMIT 1
+        `,
+        [enrollment.batchId]
+      );
+      const facultyAssignment = facultyAssignmentRows[0] as { facultyId: string | null } | undefined;
+
       const certificate = await this.certificatesService.issueCourseCompletionCertificate({
         enrollmentId: enrollment.enrollmentId,
         batchId: enrollment.batchId,
