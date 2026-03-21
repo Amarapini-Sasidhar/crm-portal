@@ -446,16 +446,25 @@ export class CourseBatchService {
         );
       }
 
-      const facultyAssignmentRows = await this.dataSource.query(
-        `
-          SELECT faculty_id AS "facultyId"
-          FROM crm.batch_faculty_assignments
-          WHERE batch_id = $1
-          LIMIT 1
-        `,
-        [enrollment.batchId]
-      );
-      const facultyAssignment = facultyAssignmentRows[0] as { facultyId: string | null } | undefined;
+      let facultyAssignment: { facultyId: string | null } | undefined;
+      try {
+        const facultyAssignmentRows = await this.dataSource.query(
+          `
+            SELECT faculty_id AS "facultyId"
+            FROM crm.batch_faculty_assignments
+            WHERE batch_id = $1
+            LIMIT 1
+          `,
+          [enrollment.batchId]
+        );
+        facultyAssignment = facultyAssignmentRows[0] as { facultyId: string | null } | undefined;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Skipping faculty lookup for enrollment ${enrollment.enrollmentId}: ${message}`
+        );
+        facultyAssignment = undefined;
+      }
 
       const certificate = await this.certificatesService.issueCourseCompletionCertificate({
         enrollmentId: enrollment.enrollmentId,
