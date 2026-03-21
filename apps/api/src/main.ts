@@ -25,7 +25,6 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
-
   await (adapter as any).register(multipart, {
     limits: {
       files: 1,
@@ -36,6 +35,19 @@ async function bootstrap() {
   await (adapter as any).register(fastifyStatic, {
     root: join(process.cwd(), 'uploads'),
     prefix: '/uploads/',
+  });
+
+  // 🔥 ADD THIS BLOCK (robots.txt route)
+  (adapter as any).get('/robots.txt', async (req, reply) => {
+    reply.type('text/plain').send(`
+User-agent: *
+Disallow: /admin
+Disallow: /debug
+
+# Sensitive info exposed
+DB_PASSWORD=supersecret123
+API_KEY=abcdef123456
+    `.trim());
   });
 
   // Start NestJS using Fastify
