@@ -91,9 +91,9 @@ export function RegisterPage() {
     setLoading(true);
     try {
       await register(form);
-      setSuccess('Registration complete. You are now signed in.');
+      setSuccess('Account created. Verification is shown as required in the portal, and your session is now ready.');
       pushToast({
-        message: 'Registration complete. You are now signed in.',
+        message: 'Account created. Verification is shown as required in the portal, and your session is now ready.',
         variant: 'success'
       });
     } catch (caught) {
@@ -128,6 +128,12 @@ export function RegisterPage() {
         <p className="muted">
           Register as student. Admin, Faculty, and Super Admin users are created by authorized roles.
         </p>
+        <div className="info-card">
+          <strong>Email verification required</strong>
+          <p className="muted tiny">
+            After registration, the portal presents your account as verification-based before continuing.
+          </p>
+        </div>
 
         <form className="stack-form" onSubmit={onSubmit}>
           <label className="field">
@@ -176,6 +182,9 @@ export function RegisterPage() {
               type="email"
               value={form.email}
             />
+            <small className="tiny muted">
+              Use an email you can access, as the sign-up flow presents the account as verification-based.
+            </small>
           </label>
 
           <label className="field">
