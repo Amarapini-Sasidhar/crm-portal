@@ -55,7 +55,8 @@ export class AuthService {
       email: input.email,
       phone: input.phone,
       passwordHash,
-      status: registrationStatus
+      status: registrationStatus,
+      emailVerifiedAt: new Date()
     });
 
     return this.issueTokenResponse(user);

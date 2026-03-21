@@ -19,6 +19,7 @@ type CreateUserInput = {
   phone?: string;
   passwordHash: string;
   status?: UserStatus;
+  emailVerifiedAt?: Date | null;
 };
 
 @Injectable()
@@ -43,7 +44,8 @@ export class UsersService {
       email: normalizedEmail,
       phone: input.phone?.trim() ?? null,
       passwordHash: input.passwordHash,
-      status: input.status ?? UserStatus.ACTIVE
+      status: input.status ?? UserStatus.ACTIVE,
+      emailVerifiedAt: input.emailVerifiedAt ?? null
     });
 
     return this.usersRepository.save(user);
