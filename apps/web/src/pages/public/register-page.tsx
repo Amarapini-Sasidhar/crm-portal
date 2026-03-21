@@ -2,7 +2,7 @@ import { FormEvent, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { ApiError } from '../../lib/api-client';
 import { useAuth } from '../../auth/auth-context';
-import { ErrorMessage, SuccessMessage } from '../../components/ui/feedback';
+import { ErrorMessage } from '../../components/ui/feedback';
 import { LoadingSpinner } from '../../components/ui/loading-spinner';
 import { useToast } from '../../components/ui/toast-provider';
 
@@ -66,7 +66,6 @@ export function RegisterPage() {
     phone: ''
   });
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   if (isAuthenticated && user) {
@@ -76,7 +75,6 @@ export function RegisterPage() {
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    setSuccess(null);
 
     const validationError = validateRegisterForm(form);
     if (validationError) {
@@ -91,10 +89,10 @@ export function RegisterPage() {
     setLoading(true);
     try {
       await register(form);
-      setSuccess('Account created. Verification is shown as required in the portal, and your session is now ready.');
       pushToast({
-        message: 'Account created. Verification is shown as required in the portal, and your session is now ready.',
-        variant: 'success'
+        message: 'Your account has been successfully verified',
+        variant: 'success',
+        durationMs: 3000
       });
     } catch (caught) {
       let message = 'Registration failed. Please try again.';
@@ -210,7 +208,6 @@ export function RegisterPage() {
           </label>
 
           {error && <ErrorMessage message={error} />}
-          {success && <SuccessMessage message={success} />}
 
           <button className="btn" disabled={loading} type="submit">
             {loading ? <LoadingSpinner label="Creating account..." size="sm" /> : 'Register'}
