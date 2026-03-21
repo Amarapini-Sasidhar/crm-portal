@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException
 } from '@nestjs/common';
@@ -28,6 +29,8 @@ const DEFAULT_BATCH_CAPACITY = 100;
 
 @Injectable()
 export class CourseBatchService {
+  private readonly logger = new Logger(CourseBatchService.name);
+
   constructor(
     @InjectRepository(Course)
     private readonly coursesRepository: Repository<Course>,
@@ -453,21 +456,29 @@ export class CourseBatchService {
     );
     const facultyAssignment = facultyAssignmentRows[0] as { facultyId: string | null } | undefined;
 
-    const certificate = await this.certificatesService.issueCourseCompletionCertificate({
-      enrollmentId: enrollment.enrollmentId,
-      batchId: enrollment.batchId,
-      studentId,
-      courseId: enrollment.courseId,
-      facultyId: facultyAssignment?.facultyId ?? null,
-      completedAt: new Date()
-    });
+    try {
+      const certificate = await this.certificatesService.issueCourseCompletionCertificate({
+        enrollmentId: enrollment.enrollmentId,
+        batchId: enrollment.batchId,
+        studentId,
+        courseId: enrollment.courseId,
+        facultyId: facultyAssignment?.facultyId ?? null,
+        completedAt: new Date()
+      });
 
-    return {
-      enrollmentId: enrollment.enrollmentId,
-      status: EnrollmentStatus.COMPLETED,
-      completionPercentage: 100,
-      certificate
-    };
+      return {
+        enrollmentId: enrollment.enrollmentId,
+        status: EnrollmentStatus.COMPLETED,
+        completionPercentage: 100,
+        certificate
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Video completion certificate generation failed for enrollment ${enrollment.enrollmentId}: ${message}`
+      );
+      throw new BadRequestException(message || 'Could not generate certificate right now.');
+    }
   }
 
   private validateDateRange(startDateRaw: string, endDateRaw: string) {
