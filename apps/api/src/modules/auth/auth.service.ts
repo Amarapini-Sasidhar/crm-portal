@@ -209,7 +209,7 @@ export class AuthService {
   }
 
   private buildPasswordResetUrl(resetToken: string): string {
-    const frontendBaseUrl = 'http://localhost:5173';
+    const frontendBaseUrl = 'http://crm-portal-sand.vercel.app';
 
     return `${frontendBaseUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
   }
